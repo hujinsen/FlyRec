@@ -106,9 +106,26 @@ def ui_loop():
     def refresh():
         while result_q:
             flag, txt = result_q.popleft()
-            if flag == 'live':          # 半句：原地覆盖
-                text.delete(live_start[0], 'end')
-                text.insert(live_start[0], txt)
+            if flag == 'live':          # 半句：增量更新（只插入/删除差异部分）
+                # 当前 UI 中 live 部分的文本
+                try:
+                    curr = text.get(live_start[0], 'end-1c')
+                except Exception:
+                    curr = ''
+                new = txt or ''
+                # 计算最长公共前缀（按字符）
+                prefix_len = 0
+                max_pref = min(len(curr), len(new))
+                while prefix_len < max_pref and curr[prefix_len] == new[prefix_len]:
+                    prefix_len += 1
+                # 如果当前比公共前缀长，删除多余尾部
+                if prefix_len < len(curr):
+                    # 删除从 live_start + prefix_len 到 end 的多余字符
+                    text.delete(f"{live_start[0]}+{prefix_len}c", 'end')
+                # 如果新文本比公共前缀长，插入差异部分
+                if prefix_len < len(new):
+                    to_insert = new[prefix_len:]
+                    text.insert('end', to_insert)
             else:                       # 整句：换行
                 # 如果文本不为空且不以换行结束，先插入换行以分隔句子
                 idx = text.index('end-1c')
