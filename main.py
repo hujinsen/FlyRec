@@ -101,16 +101,24 @@ def ui_loop():
     root.title('飞记-实时')
     text = tk.Text(root, height=8, width=50, font=('微软雅黑', 14))
     text.pack()
-    live_start = '1.0'
+    # 使用可变容器保存 live_start，避免闭包中赋值导致的 UnboundLocalError
+    live_start = ['1.0']
     def refresh():
         while result_q:
             flag, txt = result_q.popleft()
             if flag == 'live':          # 半句：原地覆盖
-                text.delete(live_start, 'end')
-                text.insert(live_start, txt)
+                text.delete(live_start[0], 'end')
+                text.insert(live_start[0], txt)
             else:                       # 整句：换行
-                text.insert('end', '\n'+txt)
-                live_start = text.index('end')      # 更新半句插入点
+                # 如果文本不为空且不以换行结束，先插入换行以分隔句子
+                idx = text.index('end-1c')
+                # 当文本为空时，直接插入文本而不额外换行
+                if text.get('1.0', 'end-1c').strip():
+                    text.insert('end', '\n' + txt)
+                else:
+                    text.insert('end', txt)
+                # 更新半句插入点到当前文本末尾
+                live_start[0] = text.index('end')
         text.see('end')
         root.after(100, refresh)
     refresh()
