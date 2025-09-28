@@ -5,9 +5,9 @@
 # 依赖：pip install pyaudio aliyun-python-sdk-core dashscope websocket-client
 
 import pyaudio, threading, json, dashscope
-from dashscope.audio.asr import Recognition
+from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
 from collections import deque
-
+import time
 ########################################
 # 0 参数
 SAMPLE_RATE   = 16000
@@ -22,6 +22,7 @@ result_q = deque()                     # 给 UI 线程的文本队列
 
 def audio_capture():
     """后台线程：不断往 audio_q 塞 PCM 数据"""
+    # 该函数保留为备用（不直接用于 RecognitionCallback 模式）。
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=CHANNELS, rate=SAMPLE_RATE,
                     input=True, frames_per_buffer=CHUNK)
@@ -29,31 +30,68 @@ def audio_capture():
         data = stream.read(CHUNK, exception_on_overflow=False)
         audio_q.append(data)
 
+
+class ASRCallback(RecognitionCallback):
+    """把识别事件转为放入 result_q 的任务"""
+    def on_open(self) -> None:
+        # 当识别会话打开时，没必要做额外处理。
+        print('RecognitionCallback open.')
+
+    def on_close(self) -> None:
+        print('RecognitionCallback close.')
+
+    def on_event(self, result: RecognitionResult) -> None:
+        # result.get_sentence() 返回类似 dict 的结构或对象，尽量兼容 demo.py 的用法
+        try:
+            sentence = result.get_sentence()
+        except Exception:
+            # 回退到直接使用 result.sentence
+            sentence = getattr(result, 'sentence', None)
+        if not sentence:
+            return
+        # 兼容不同 SDK 返回结构
+        text = sentence.get('text') if isinstance(sentence, dict) else getattr(sentence, 'text', str(sentence))
+        end_time = sentence.get('end_time') if isinstance(sentence, dict) else getattr(sentence, 'end_time', None)
+        if end_time:
+            result_q.append(('fix', text))
+        else:
+            result_q.append(('live', text))
+
 def asr_thread():
-    """后台线程：流式识别，把结果塞进 result_q"""
-    # 阿里云免费额度：每月 2 小时
-    dashscope.api_key = 'YOUR_API_KEY'      # ← 换成自己的
+    """使用 Recognition + 回调进行识别，会在回调中把结果放入 result_q"""
+    # 请把下面的 api_key 换成你自己的密钥，或事先通过环境变量配置
+    dashscope.api_key = 'sk-2d627fbbc4fa491db207c632a77f2852'
+    callback = ASRCallback()
     recognizer = Recognition(model='paraformer-realtime-v2',
                              format='pcm',
-                             sample_rate=SAMPLE_RATE)
-    # 构造一个「生成器」给 SDK
-    def gen():
-        while True:
-            if audio_q:
-                yield audio_q.popleft()
-            else:
-                import time
-                time.sleep(0.01)
+                             sample_rate=SAMPLE_RATE,
+                             callback=callback)
 
-    for rsp in recognizer.stream_call(gen):
-        if rsp.status_code == 200:
-            sentence = rsp.output['sentence']
-            if sentence['end_time']:          # 整句
-                result_q.append(('fix', sentence['text']))
-            else:                              # 半句
-                result_q.append(('live', sentence['text']))
-        else:
-            print('ASR error:', rsp.message)
+    # 启动识别，会触发 on_open
+    recognizer.start()
+
+    # 在本线程中打开本地麦克风，读取帧并发送给 recognizer
+    mic = pyaudio.PyAudio()
+    stream = mic.open(format=FORMAT,
+                      channels=CHANNELS,
+                      rate=SAMPLE_RATE,
+                      input=True,
+                      frames_per_buffer=CHUNK)
+    try:
+        while True:
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            # 直接发送原始 PCM 帧
+            recognizer.send_audio_frame(data)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            recognizer.stop()
+        except Exception:
+            pass
+        stream.stop_stream()
+        stream.close()
+        mic.terminate()
 
 ########################################
 # 极简 UI（tkinter，单 Text 一直追加）
