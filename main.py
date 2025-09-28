@@ -119,8 +119,10 @@ def ui_loop():
 ########################################
 # 启动
 if __name__ == '__main__':
-    threading.Thread(target=audio_capture, daemon=True).start()
-    # threading.Thread(target=asr_thread,    daemon=True).start()
+    # 可选的本地音频采集线程（未直接用于 Recognition 回调方案），保留以备调试
+    # threading.Thread(target=audio_capture, daemon=True).start()
+    # 启动 ASR 后台线程（会打开麦克风并把音频帧送到 recognizer）
+    threading.Thread(target=asr_thread, daemon=True).start()
     ui_loop()
 
 
