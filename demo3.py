@@ -80,6 +80,9 @@ class StreamingASRApp:
         self.pause_btn.pack(side=tk.LEFT)
         ttk.Button(ctrl_frame, text="清空已完成", command=self.clear_finished).pack(side=tk.LEFT, padx=(8,0))
         ttk.Button(ctrl_frame, text="清空活动", command=self.clear_active).pack(side=tk.LEFT, padx=(8,0))
+        
+        #发送到微信
+        ttk.Button(ctrl_frame, text="发送到微信", command=self.send_to_wechat).pack(side=tk.LEFT, padx=(8,0))
 
         # 状态
         self.paused = False
@@ -93,6 +96,17 @@ class StreamingASRApp:
         # 事件绑定
         self.active_tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
+    def send_to_wechat(self):
+        # 读取文本框中内容，并拷贝到剪贴板
+        text = self.finished_text.get("1.0", tk.END).strip()
+        if not text:
+            return
+        # 调用系统剪贴板
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        # 弹出提示
+        print("提示", "已拷贝到剪贴板，请在微信中粘贴")
+        
     def toggle_pause(self):
         self.paused = not self.paused
         self.pause_btn.config(text="继续更新" if self.paused else "暂停更新")
