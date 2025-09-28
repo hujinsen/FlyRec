@@ -101,8 +101,9 @@ def ui_loop():
     root.title('飞记-实时')
     text = tk.Text(root, height=8, width=50, font=('微软雅黑', 14))
     text.pack()
-    # 使用可变容器保存 live_start，避免闭包中赋值导致的 UnboundLocalError
+    # 使用可变容器保存 live_start 与 current_live，避免闭包中赋值导致的 UnboundLocalError
     live_start = ['1.0']
+    current_live = ['']  # 当前半句文本（字符串），用于在收到 'fix' 时替换而不是重复追加
     def refresh():
         while result_q:
             flag, txt = result_q.popleft()
@@ -113,6 +114,8 @@ def ui_loop():
                 except Exception:
                     curr = ''
                 new = txt or ''
+                # 保存当前 live 文本状态
+                current_live[0] = new
                 # 计算最长公共前缀（按字符）
                 prefix_len = 0
                 max_pref = min(len(curr), len(new))
@@ -127,15 +130,32 @@ def ui_loop():
                     to_insert = new[prefix_len:]
                     text.insert('end', to_insert)
             else:                       # 整句：换行
-                # 如果文本不为空且不以换行结束，先插入换行以分隔句子
-                idx = text.index('end-1c')
-                # 当文本为空时，直接插入文本而不额外换行
-                if text.get('1.0', 'end-1c').strip():
-                    text.insert('end', '\n' + txt)
+                # 收到最终句时，先删除当前的 live 部分（若存在），再以整句形式插入，避免重复
+                # 删除 live 部分
+                try:
+                    # 删除 live_start 到 end（移除半句）
+                    text.delete(live_start[0], 'end')
+                except Exception:
+                    pass
+                # 如果文本剩余部分非空且不以换行结束，先插入换行以分隔句子
+                before = text.get('1.0', 'end-1c')
+                if before.strip():
+                    # 如果最后一行已经等于要插入的句子（避免重复），跳过插入
+                    last_line = before.splitlines()[-1] if before.splitlines() else ''
+                    if last_line.strip() == (txt or '').strip():
+                        # 已存在相同句子，清空 current_live 并更新插入点
+                        current_live[0] = ''
+                        live_start[0] = text.index('end')
+                    else:
+                        text.insert('end', '\n' + (txt or ''))
+                        # 更新半句插入点到当前文本末尾
+                        live_start[0] = text.index('end')
+                        current_live[0] = ''
                 else:
-                    text.insert('end', txt)
-                # 更新半句插入点到当前文本末尾
-                live_start[0] = text.index('end')
+                    # 文本为空，直接插入最终句
+                    text.insert('end', (txt or ''))
+                    live_start[0] = text.index('end')
+                    current_live[0] = ''
         text.see('end')
         root.after(100, refresh)
     refresh()
