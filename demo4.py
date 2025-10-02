@@ -155,20 +155,6 @@ class HoldToTalkRecognizer:
             except Exception as e:
                 print('DEBUG on_event exception:', e)
 
-    # def _audio_sender(self):
-    #     # read audio from stream and send to recognition while running
-    #     while self._running:
-    #         try:
-    #             if self._stream:
-    #                 data = self._stream.read(BLOCK_SIZE, exception_on_overflow=False)
-    #                 if self._recognition is not None:
-    #                     self._recognition.send_audio_frame(data) 
-    #             else:
-    #                 print("音频流未打开！")
-    #                 time.sleep(0.01)
-    #         except Exception:
-    #             print("读取音频或发送音频帧时出错！")
-    #             time.sleep(0.01)
 
     def _audio_sender(self):
         while self._running:
