@@ -7,6 +7,9 @@ requires-python = ">=3.10"
 dependencies = [
     "aliyun-python-sdk-core>=2.16.0",
     "dashscope>=1.24.6",
+    "flask>=3.1.2",
     "pyaudio>=0.2.14",
+    "pynput>=1.8.1",
+    "requests==2.31.0",
     "websocket-client>=1.8.0",
 ]
