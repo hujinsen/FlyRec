@@ -13,7 +13,7 @@ import dashscope
 import pyaudio
 from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
 from pynput import keyboard
-
+from text_format import TextGenerator
 # Set recording parameters
 SAMPLE_RATE = 16000  # sampling rate (Hz)
 CHANNELS = 1  # mono channel
@@ -21,6 +21,24 @@ DTYPE = 'int16'  # data type
 FORMAT_PCM = 'pcm'  # the format of the audio data
 BLOCK_SIZE = 3200  # number of frames per buffer
 
+DEFAULT_MESSAGE = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "你是谁？"},
+]
+
+CHAT_MESSAGE = [
+    {"role": "system", "content": "你是聊天高手，回答简洁有趣。擅长使用emoji表情。"},
+    {"role": "user", "content": "待定义"},
+]
+EMAIL_MESSAGE = [
+    {"role": "system", "content": "你是专业的邮件助手，帮我把下面的内容润色成正式的邮件。要求简洁、礼貌、专业、有条理。我叫胡进森，邮箱是：<hujsen@163.com>,电话是：13290818863，个人网站是：https://hujinsen.github.io/。"},
+    {"role": "user", "content": "待定义"},
+]
+
+CODE_MESSAGE = [
+    {"role": "system", "content": "你是专业的代码助手，帮我把下面内容写成代码，要求代码简洁、规范、有注释。"},
+    {"role": "user", "content": "待定义"},
+]
 
 def init_dashscope_api_key():
     """Set DashScope API key from environment or inline value."""
@@ -46,7 +64,10 @@ class HoldToTalkRecognizer:
         self._audio_thread = None
         self._running = False
         self._results_lock = threading.Lock()
+        self._format_text = TextGenerator(api_key=dashscope.api_key)
 
+
+        
     class _Callback(RecognitionCallback):
         def __init__(self, owner: 'HoldToTalkRecognizer'):
             super().__init__()
@@ -134,22 +155,37 @@ class HoldToTalkRecognizer:
             except Exception as e:
                 print('DEBUG on_event exception:', e)
 
+    # def _audio_sender(self):
+    #     # read audio from stream and send to recognition while running
+    #     while self._running:
+    #         try:
+    #             if self._stream:
+    #                 data = self._stream.read(BLOCK_SIZE, exception_on_overflow=False)
+    #                 if self._recognition is not None:
+    #                     self._recognition.send_audio_frame(data) 
+    #             else:
+    #                 print("音频流未打开！")
+    #                 time.sleep(0.01)
+    #         except Exception:
+    #             print("读取音频或发送音频帧时出错！")
+    #             time.sleep(0.01)
+
     def _audio_sender(self):
-        # read audio from stream and send to recognition while running
         while self._running:
             try:
                 if self._stream:
                     data = self._stream.read(BLOCK_SIZE, exception_on_overflow=False)
-                    try:
-                        if self._recognition is not None:
-                            self._recognition.send_audio_frame(data)
-                    except Exception:
-                        # ignore transient send errors
-                        pass
+                    if self._recognition is not None:
+                        self._recognition.send_audio_frame(data)
                 else:
+                    print("音频流未打开！")
                     time.sleep(0.01)
-            except Exception:
+            except Exception as e:
+                print(f"读取音频或发送音频帧时出错：{e}")
+                if not self._running:  # 如果已经停止，直接退出循环
+                    break
                 time.sleep(0.01)
+
 
     def start_session(self):
         if self._running:
@@ -176,31 +212,72 @@ class HoldToTalkRecognizer:
             self._running = False
 
     def stop_session(self):
+        # if not self._running:
+        #     return
+        # print('Stop recognition session')
+        # try:
+        #     if self._recognition is not None:
+        #         self._recognition.stop()
+        # except Exception as e:
+        #     print('Failed to stop recognition:', e)
+        # wait for callbacks to finish appending results
+
         if not self._running:
             return
         print('Stop recognition session')
-        try:
-            if self._recognition is not None:
-                self._recognition.stop()
-        except Exception as e:
-            print('Failed to stop recognition:', e)
-        # wait for callbacks to finish appending results
-        
+        self._running = False  # 先停止线程循环
+        if self._audio_thread is not None:
+            self._audio_thread.join()  # 等待线程结束
+        if self._recognition is not None:
+            self._recognition.stop()  # 停止识别
+        if self._stream is not None:
+            try:
+                self._stream.stop_stream()
+                self._stream.close()
+            except Exception:
+                pass
+        if self._mic is not None:
+            try:
+                self._mic.terminate()
+            except Exception:
+                pass
+        self._stream = None
+        self._mic = None
+        self._recognition = None
+        self._audio_thread = None
+        self._callback = None
+        self._running = False   
+                    
         # print results
         with self._results_lock:
             results = getattr(self, '_results', [])
-            # print('DEBUG stop_session results count:', len(results))
-            # print('DEBUG stop_session results repr:', repr(results))
+            
             if results:
-                print('Final recognition result:\n' + '\n'.join(results))
+                final_text = ' '.join(results)
+                print('Final recognition result:\n' + final_text)
+                # format text using TextGenerator
+
+                # messages = EMAIL_MESSAGE.copy()
+                messages = CODE_MESSAGE.copy()
+                # replace placeholder with actual recognized text
+                messages[-1]['content'] = final_text
+                print('使用模版提示词:', messages)
+                formatted = self._format_text.generate(messages)
+                print('Formatted response:', repr(formatted))
+                if formatted:
+                    formatted_content = formatted.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
+                    print('Formatted text:\n' + formatted_content)
+                else:
+                    print('No formatted response received.')
+
             else:
                 print('No final recognition result.')
             # clear
             self._results = []
         # cleanup
-        self._recognition = None
-        self._callback = None
-        self._running = False
+        # self._recognition = None
+        # self._callback = None
+        # self._running = False
 
     def shutdown(self):
         # stop any running session
@@ -238,7 +315,7 @@ class HoldToTalkRecognizer:
                 pass
 
         # start keyboard listener (blocking)
-        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+        with keyboard.Listener(on_press=on_press, on_release=on_release, daemon=True) as listener:
             listener.join()
 
 

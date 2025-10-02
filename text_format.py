@@ -100,13 +100,17 @@ class TextGenerator:
 if __name__ == "__main__":
     # 简单的命令行使用示例
     default_messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "你是谁？"},
+        {"role": "system", "content": "你是专业的邮件助手，帮我把下面的内容润色成正式的邮件。要求简洁、礼貌、专业、有条理。我叫胡进森，邮箱是：<hujsen@163.com>,电话是：13290818863，个人网站是：https://hujinsen.github.io/。"},
+        {"role": "user", "content": "写封邮件给张三，要他明天做好语音识别功能开发，回复我邮件。"},
     ]
+    CODE_MESSAGE = [
+    {"role": "system", "content": "你是专业的代码助手，帮我把下面内容写成代码，要求代码简洁、规范、有注释。"},
+    {"role": "user", "content": "帮我实现一个简单的文本比较功能，输入两个文本，输出两个文本的相似度，相似度大于0.5时输出相似，否则输出不相似。"},
+]
 
     gen = TextGenerator(api_key="sk-2d627fbbc4fa491db207c632a77f2852")
     try:
-        out = gen.generate(default_messages)
+        out = gen.generate(CODE_MESSAGE)
         print("调用成功，响应内容：")
         if out:
             print(out.get("output").get("choices")[0].get("message").get("content"))
