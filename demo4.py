@@ -1,131 +1,247 @@
 import os
 import signal  # for keyboard events handling (press "Ctrl+C" to terminate recording)
 import sys
+import threading
+import time
+import os
+import signal  # for keyboard events handling (press "Ctrl+C" to terminate recording)
+import sys
+import threading
+import time
 
 import dashscope
 import pyaudio
-from dashscope.audio.asr import *
-
-mic = None
-stream = None
+from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
+from pynput import keyboard
 
 # Set recording parameters
-sample_rate = 16000  # sampling rate (Hz)
-channels = 1  # mono channel
-dtype = 'int16'  # data type
-format_pcm = 'pcm'  # the format of the audio data
-block_size = 3200  # number of frames per buffer
+SAMPLE_RATE = 16000  # sampling rate (Hz)
+CHANNELS = 1  # mono channel
+DTYPE = 'int16'  # data type
+FORMAT_PCM = 'pcm'  # the format of the audio data
+BLOCK_SIZE = 3200  # number of frames per buffer
 
 
 def init_dashscope_api_key():
-    """
-        Set your DashScope API-key. More information:
-        https://github.com/aliyun/alibabacloud-bailian-speech-demo/blob/master/PREREQUISITES.md
-    """
-
+    """Set DashScope API key from environment or inline value."""
     if 'DASHSCOPE_API_KEY' in os.environ:
-        dashscope.api_key = os.environ[
-            'DASHSCOPE_API_KEY']  # load API-key from environment variable DASHSCOPE_API_KEY
+        dashscope.api_key = os.environ['DASHSCOPE_API_KEY']
     else:
-        dashscope.api_key = 'sk-2d627fbbc4fa491db207c632a77f2852'  # set API-key manually
+        dashscope.api_key = 'sk-2d627fbbc4fa491db207c632a77f2852'
 
 
-# Real-time speech recognition callback
-class Callback(RecognitionCallback):
-    def on_open(self) -> None:
-        global mic
-        global stream
-        print('RecognitionCallback open.')
-        mic = pyaudio.PyAudio()
-        stream = mic.open(format=pyaudio.paInt16,
-                          channels=1,
-                          rate=16000,
-                          input=True)
+class HoldToTalkRecognizer:
+    """Encapsulates hold-to-talk behavior using DashScope recognition.
 
-    def on_close(self) -> None:
-        global mic
-        global stream
-        print('RecognitionCallback close.')
-        stream.stop_stream()
-        stream.close()
-        mic.terminate()
-        stream = None
-        mic = None
+    Usage: create instance and call run(). Press and hold Left Alt to start a session,
+    release to stop and print results. Program stays running for more sessions.
+    """
 
-    def on_complete(self) -> None:
-        print('RecognitionCallback completed.')  # recognition completed
+    def __init__(self):
+        init_dashscope_api_key()
+        self._mic = None
+        self._stream = None
+        self._recognition = None
+        self._callback = None
+        self._audio_thread = None
+        self._running = False
+        self._results_lock = threading.Lock()
 
-    def on_error(self, message) -> None:
-        print('RecognitionCallback task_id: ', message.request_id)
-        print('RecognitionCallback error: ', message.message)
-        # Stop and close the audio stream if it is running
-        if 'stream' in globals() and stream.active:
-            stream.stop()
-            stream.close()
-        # Forcefully exit the program
-        sys.exit(1)
+    class _Callback(RecognitionCallback):
+        def __init__(self, owner: 'HoldToTalkRecognizer'):
+            super().__init__()
+            self.owner = owner
 
-    def on_event(self, result: RecognitionResult) -> None:
-        sentence = result.get_sentence()
-        if 'text' in sentence:
-            #语音识别中间结果
-            # print('RecognitionCallback text: ', sentence['text'])
-            if RecognitionResult.is_sentence_end(sentence):
-                #语音识别最终结果
-                print(
-                    'RecognitionCallback sentence end, request_id:%s, usage:%s'
-                    % (result.get_request_id(), result.get_usage(sentence)))
-                print(f'识别结束：{sentence["text"]}')
-                
+        def on_open(self) -> None:
+            # open mic and stream for this session
+            print('RecognitionCallback open.')
+            self.owner._mic = pyaudio.PyAudio()
+            self.owner._stream = self.owner._mic.open(format=pyaudio.paInt16,
+                                                      channels=CHANNELS,
+                                                      rate=SAMPLE_RATE,
+                                                      input=True)
+
+        def on_close(self) -> None:
+            print('RecognitionCallback close.')
+            if self.owner._stream is not None:
+                try:
+                    self.owner._stream.stop_stream()
+                except Exception:
+                    pass
+                try:
+                    self.owner._stream.close()
+                except Exception:
+                    pass
+            if self.owner._mic is not None:
+                try:
+                    self.owner._mic.terminate()
+                except Exception:
+                    pass
+            self.owner._stream = None
+            self.owner._mic = None
+
+        def on_complete(self) -> None:
+            print('RecognitionCallback completed.')
+
+        def on_error(self, message) -> None:
+            print('RecognitionCallback task_id: ', getattr(message, 'request_id', None))
+            print('RecognitionCallback error: ', getattr(message, 'message', None))
+            # terminate session on error
+            try:
+                if self.owner._stream is not None:
+                    try:
+                        if hasattr(self.owner._stream, 'is_active') and self.owner._stream.is_active():
+                            self.owner._stream.stop_stream()
+                    except Exception:
+                        pass
+                    try:
+                        self.owner._stream.close()
+                    except Exception:
+                        pass
+            finally:
+                # not exiting the program; allow user to continue
+                self.owner._running = False
+
+        def on_event(self, result: RecognitionResult) -> None:
+            try:
+                sentence = result.get_sentence()
+                # print('DEBUG on_event received sentence:', repr(sentence))
+                if sentence is None:
+                    return
+                # handle different possible shapes defensively
+                text = None
+                if isinstance(sentence, dict) and 'text' in sentence:
+                    text = sentence['text']
+                elif isinstance(sentence, list) and len(sentence) > 0:
+                    # sometimes api may return a list; attempt to find a dict with 'text'
+                    for item in sentence:
+                        if isinstance(item, dict) and 'text' in item:
+                            text = item['text']
+                            break
+                if text is None:
+                    return
+                if RecognitionResult.is_sentence_end(sentence):
+                    try:
+                        print('RecognitionCallback sentence end, request_id:%s, usage:%s' % (
+                            result.get_request_id(), result.get_usage(sentence)))
+                    except Exception:
+                        print('DEBUG: failed to print request/usage')
+                    with self.owner._results_lock:
+                        if not hasattr(self.owner, '_results'):
+                            self.owner._results = []
+                        self.owner._results.append(text)
+                        print('DEBUG appended text ->', repr(text))
+            except Exception as e:
+                print('DEBUG on_event exception:', e)
+
+    def _audio_sender(self):
+        # read audio from stream and send to recognition while running
+        while self._running:
+            try:
+                if self._stream:
+                    data = self._stream.read(BLOCK_SIZE, exception_on_overflow=False)
+                    try:
+                        if self._recognition is not None:
+                            self._recognition.send_audio_frame(data)
+                    except Exception:
+                        # ignore transient send errors
+                        pass
+                else:
+                    time.sleep(0.01)
+            except Exception:
+                time.sleep(0.01)
+
+    def start_session(self):
+        if self._running:
+            return
+        print('Start recognition session')
+        self._callback = HoldToTalkRecognizer._Callback(self)
+        self._recognition = Recognition(
+            model='fun-asr-realtime',
+            format=FORMAT_PCM,
+            sample_rate=SAMPLE_RATE,
+            semantic_punctuation_enabled=False,
+            callback=self._callback
+        )
+        try:
+            self._recognition.start()
+            self._running = True
+            # clear previous results
+            with self._results_lock:
+                self._results = []
+            self._audio_thread = threading.Thread(target=self._audio_sender, daemon=True)
+            self._audio_thread.start()
+        except Exception as e:
+            print('Failed to start recognition:', e)
+            self._running = False
+
+    def stop_session(self):
+        if not self._running:
+            return
+        print('Stop recognition session')
+        try:
+            if self._recognition is not None:
+                self._recognition.stop()
+        except Exception as e:
+            print('Failed to stop recognition:', e)
+        # wait for callbacks to finish appending results
+        
+        # print results
+        with self._results_lock:
+            results = getattr(self, '_results', [])
+            # print('DEBUG stop_session results count:', len(results))
+            # print('DEBUG stop_session results repr:', repr(results))
+            if results:
+                print('Final recognition result:\n' + '\n'.join(results))
+            else:
+                print('No final recognition result.')
+            # clear
+            self._results = []
+        # cleanup
+        self._recognition = None
+        self._callback = None
+        self._running = False
+
+    def shutdown(self):
+        # stop any running session
+        if self._running and self._recognition is not None:
+            try:
+                self._recognition.stop()
+            except Exception:
+                pass
+        print('Shutting down')
+
+    def run(self):
+        # set up signal handler to allow graceful exit
+        def _signal_handler(sig, frame):
+            print('Ctrl+C pressed')
+            self.shutdown()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, _signal_handler)
+        print("Initializing ... Hold Left Alt (opt) to talk, release to stop and show result. Press Ctrl+C to quit.")
+
+        def on_press(key):
+            try:
+                if key == keyboard.Key.alt_l:
+                    if not self._running:
+                        self.start_session()
+            except Exception:
+                pass
+
+        def on_release(key):
+            try:
+                if key == keyboard.Key.alt_l:
+                    if self._running:
+                        self.stop_session()
+            except Exception:
+                pass
+
+        # start keyboard listener (blocking)
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+            listener.join()
 
 
-def signal_handler(sig, frame):
-    print('Ctrl+C pressed, stop recognition ...')
-    # Stop recognition
-    recognition.stop()
-    print('Recognition stopped.')
-    print(
-        '[Metric] requestId: {}, first package delay ms: {}, last package delay ms: {}'
-        .format(
-            recognition.get_last_request_id(),
-            recognition.get_first_package_delay(),
-            recognition.get_last_package_delay(),
-        ))
-    # Forcefully exit the program
-    sys.exit(0)
-
-
-# main function
 if __name__ == '__main__':
-    init_dashscope_api_key()
-    print('Initializing ...')
-
-    # Create the recognition callback
-    callback = Callback()
-
-    # Call recognition service by async mode, you can customize the recognition parameters, like model, format,
-    # sample_rate
-    recognition = Recognition(
-        model='fun-asr-realtime',
-        format=format_pcm,
-        # 'pcm'、'wav'、'opus'、'speex'、'aac'、'amr', you can check the supported formats in the document
-        sample_rate=sample_rate,
-        # support 8000, 16000
-        semantic_punctuation_enabled=False,
-        callback=callback)
-
-    # Start recognition
-    recognition.start()
-
-    signal.signal(signal.SIGINT, signal_handler)
-    print("Press 'Ctrl+C' to stop recording and recognition...")
-    # Create a keyboard listener until "Ctrl+C" is pressed
-
-    while True:
-        if stream:
-            data = stream.read(3200, exception_on_overflow=False)
-            recognition.send_audio_frame(data)
-        else:
-            break
-
-    recognition.stop()
+    app = HoldToTalkRecognizer()
+    app.run()
