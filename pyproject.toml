@@ -9,7 +9,9 @@ dependencies = [
     "dashscope>=1.24.6",
     "flask>=3.1.2",
     "pyaudio>=0.2.14",
+    "pyautogui>=0.9.54",
     "pynput>=1.8.1",
+    "pyperclip>=1.11.0",
     "requests==2.31.0",
     "websocket-client>=1.8.0",
 ]

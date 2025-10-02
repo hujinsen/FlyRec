@@ -14,6 +14,8 @@ import pyaudio
 from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
 from pynput import keyboard
 from text_format import TextGenerator
+import pyperclip
+import pyautogui
 # Set recording parameters
 SAMPLE_RATE = 16000  # sampling rate (Hz)
 CHANNELS = 1  # mono channel
@@ -242,9 +244,9 @@ class HoldToTalkRecognizer:
                 final_text = ' '.join(results)
                 print('Final recognition result:\n' + final_text)
                 # format text using TextGenerator
-
+                messages = CHAT_MESSAGE.copy()
                 # messages = EMAIL_MESSAGE.copy()
-                messages = CODE_MESSAGE.copy()
+                # messages = CODE_MESSAGE.copy()
                 # replace placeholder with actual recognized text
                 messages[-1]['content'] = final_text
                 print('使用模版提示词:', messages)
@@ -253,6 +255,13 @@ class HoldToTalkRecognizer:
                 if formatted:
                     formatted_content = formatted.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
                     print('Formatted text:\n' + formatted_content)
+                    #将格式化后文本写入当前活动光标处
+                    # 将文本复制到剪贴板
+                    pyperclip.copy(formatted_content)
+
+                    # 模拟粘贴操作
+                    pyautogui.hotkey("ctrl", "v")
+                    # pyautogui.write(formatted_content)
                 else:
                     print('No formatted response received.')
 
@@ -286,7 +295,7 @@ class HoldToTalkRecognizer:
 
         def on_press(key):
             try:
-                if key == keyboard.Key.alt_l:
+                if key == keyboard.Key.alt_l or (key == keyboard.Key.space and 'alt_l' in pressed_keys):
                     if not self._running:
                         self.start_session()
             except Exception:
@@ -294,7 +303,7 @@ class HoldToTalkRecognizer:
 
         def on_release(key):
             try:
-                if key == keyboard.Key.alt_l:
+                if key == keyboard.Key.alt_l or (key == keyboard.Key.space and 'alt_l' in pressed_keys):
                     if self._running:
                         self.stop_session()
             except Exception:
