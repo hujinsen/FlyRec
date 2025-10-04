@@ -24,7 +24,7 @@ FORMAT_PCM = 'pcm'  # the format of the audio data
 BLOCK_SIZE = 3200  # number of frames per buffer
 
 DEFAULT_MESSAGE = [
-    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "system", "content": "你会将文字中语气词去掉，修正可能出错的文字，不需要回答问题，尽量不要修改文本，返回最接近说话人意思的文本"},
     {"role": "user", "content": "你是谁？"},
 ]
 
@@ -244,7 +244,7 @@ class HoldToTalkRecognizer:
                 final_text = ' '.join(results)
                 print('Final recognition result:\n' + final_text)
                 # format text using TextGenerator
-                messages = CHAT_MESSAGE.copy()
+                messages = DEFAULT_MESSAGE.copy()
                 # messages = EMAIL_MESSAGE.copy()
                 # messages = CODE_MESSAGE.copy()
                 # replace placeholder with actual recognized text
@@ -295,15 +295,24 @@ class HoldToTalkRecognizer:
 
         def on_press(key):
             try:
-                if key == keyboard.Key.alt_l or (key == keyboard.Key.space and 'alt_l' in pressed_keys):
+                if key == keyboard.Key.ctrl_l or (key == keyboard.Key.space and 'ctrl_l' in pressed_keys):
                     if not self._running:
                         self.start_session()
+                
+                #t
+                # 同时按下ctrl和C键，停止识别shutdown并退出
+                
+                if 'ctrl_l' in pressed_keys and 'c' in pressed_keys:
+                    print('Ctrl+C detected')
+                    self.shutdown()
+                    sys.exit(0)
+               
             except Exception:
                 pass
 
         def on_release(key):
             try:
-                if key == keyboard.Key.alt_l or (key == keyboard.Key.space and 'alt_l' in pressed_keys):
+                if key == keyboard.Key.ctrl_l or (key == keyboard.Key.space and 'ctrl_l' in pressed_keys):
                     if self._running:
                         self.stop_session()
             except Exception:
