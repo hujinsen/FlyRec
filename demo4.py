@@ -24,7 +24,7 @@ FORMAT_PCM = 'pcm'  # the format of the audio data
 BLOCK_SIZE = 3200  # number of frames per buffer
 
 DEFAULT_MESSAGE = [
-    {"role": "system", "content": "你会将文字中语气词去掉，修正可能出错的文字，不需要回答问题，尽量不要修改文本，返回最接近说话人意思的文本"},
+    {"role": "system", "content": "你是复述者，不需要回答问题，尽可能输出文本原文"},
     {"role": "user", "content": "你是谁？"},
 ]
 
@@ -38,7 +38,7 @@ EMAIL_MESSAGE = [
 ]
 
 CODE_MESSAGE = [
-    {"role": "system", "content": "你是专业的代码助手，帮我把下面内容写成代码，要求代码简洁、规范、有注释。"},
+    {"role": "system", "content": "你是专业的开发工程师"},
     {"role": "user", "content": "待定义"},
 ]
 
