@@ -24,7 +24,7 @@ FORMAT_PCM = 'pcm'  # the format of the audio data
 BLOCK_SIZE = 3200  # number of frames per buffer
 
 DEFAULT_MESSAGE = [
-    {"role": "system", "content": "你善于捕捉用户的真实意图，尽量再不改变原文的状态修，输出用户想表达意思的文本。"},
+    {"role": "system", "content": "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。"},
     {"role": "user", "content": "待定义"},
 ]
 

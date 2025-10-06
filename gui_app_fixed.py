@@ -19,9 +19,13 @@ import keyboard
 import sys
 
 import psutil
-import win32gui
-import win32process
-SMART_TEMPLATE_AVAILABLE = True
+try:
+    import win32gui
+    import win32process
+    SMART_TEMPLATE_AVAILABLE = True
+except ImportError:
+    print("win32gui 和 win32process 模块未安装，将无法使用系统托盘")
+
 
 
 
@@ -47,6 +51,13 @@ class VoiceRecognitionGUI:
         loaded_hotkey, loaded_mode = self.load_hotkey_config()
         if loaded_hotkey:
             self.current_hotkey = loaded_hotkey
+        # 加载提示词配置（中文默认 + 场景提示词）
+        self.prompts = self.load_prompts_config()
+        # 内置默认回退提示词（仅在缺失时使用）
+        self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。"
+        # 语言模式(中文/外语) + 场景(文本/聊天/邮件/代码)
+        self.language_mode_var = tk.StringVar(value='中文')
+        self.template_scene_var = tk.StringVar(value='文本')
         # 新增: 快捷键模式变量 (hold: 按住说话, double_ctrl: 双击Ctrl开始/单击结束)
         self.hotkey_mode_var = tk.StringVar(value=loaded_mode or "hold")
         self.double_ctrl_interval = 0.5  # 双击 Ctrl 判定最大间隔(秒)
@@ -68,7 +79,7 @@ class VoiceRecognitionGUI:
         # 初始化设置变量
         self.auto_paste_var = tk.BooleanVar(value=True)
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
-        self.template_var = tk.StringVar(value="默认")
+        # 旧 template_var 废弃，改用 language_mode_var + template_scene_var
         self.smart_template_var = tk.BooleanVar(value=True)  # 智能模板切换开关
         
         # 应用程序模板映射
@@ -189,6 +200,7 @@ class VoiceRecognitionGUI:
         nav_buttons = [
             ("📊 仪表板", self.show_dashboard),
             ("🎤 识别记录", self.show_transcripts),
+            ("📝 词典", self.show_user_dictionary),
             ("⚙️ 设置", self.show_settings),
             ("❓ 帮助", self.show_help)
         ]
@@ -208,6 +220,15 @@ class VoiceRecognitionGUI:
         self.hotkey_label = ttk.Label(sidebar, text=f"快捷键: {self.current_hotkey}")
         self.hotkey_label.pack(pady=(5, 0))
     
+    def show_user_dictionary(self):
+        """配置用户词典"""
+        self.clear_content()
+        title = ttk.Label(self.content_frame, text="用户词典配置", font=('Arial', 18, 'bold'))
+        title.pack(anchor=tk.W, pady=(0, 20))
+        
+       
+        
+      
     def create_content_area(self, parent):
         """创建右侧内容区域"""
         self.content_frame = ttk.Frame(parent)
@@ -313,96 +334,136 @@ class VoiceRecognitionGUI:
     def show_settings(self):
         """显示设置页面"""
         self.clear_content()
-        
-        title = ttk.Label(self.content_frame, text="设置", font=('Arial', 18, 'bold'))
-        title.pack(anchor=tk.W, pady=(0, 20))
-        
+
+        # 标题
+        ttk.Label(self.content_frame, text="设置", font=('Arial', 18, 'bold')).pack(anchor=tk.W, pady=(0,20))
+
         # 快捷键设置
         hotkey_frame = ttk.LabelFrame(self.content_frame, text="快捷键设置", padding=10)
-        hotkey_frame.pack(fill=tk.X, pady=(0, 20))
-        
+        hotkey_frame.pack(fill=tk.X, pady=(0,15))
         ttk.Label(hotkey_frame, text="当前快捷键:").grid(row=0, column=0, sticky=tk.W)
         self.hotkey_var = tk.StringVar(value=self.current_hotkey)
-        hotkey_entry = ttk.Entry(hotkey_frame, textvariable=self.hotkey_var)
-        hotkey_entry.grid(row=0, column=1, padx=(10, 0), sticky=tk.W)
-        
-        ttk.Button(hotkey_frame, text="应用", 
-                  command=self.apply_hotkey).grid(row=0, column=2, padx=(10, 0))
-        
-        ttk.Label(hotkey_frame, text="提示: ctrl+space 格式 (仅按住模式有效)", 
-                 foreground='gray').grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
-        
-        # 模式选择
+        ttk.Entry(hotkey_frame, textvariable=self.hotkey_var).grid(row=0, column=1, padx=(10,0), sticky=tk.W)
+        ttk.Button(hotkey_frame, text="应用", command=self.apply_hotkey).grid(row=0, column=2, padx=(10,0))
+        ttk.Label(hotkey_frame, text="提示: ctrl+space 格式 (仅按住模式有效)", foreground='gray').grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5,0))
+
+        # 快捷键模式
         mode_frame = ttk.LabelFrame(self.content_frame, text="快捷键模式", padding=10)
-        mode_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        ttk.Radiobutton(mode_frame, text="按住说话 (Ctrl+Space)", value='hold', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=0, sticky=tk.W, padx=(0, 15))
+        mode_frame.pack(fill=tk.X, pady=(0,15))
+        ttk.Radiobutton(mode_frame, text="按住说话 (Ctrl+Space)", value='hold', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=0, sticky=tk.W, padx=(0,12))
         ttk.Radiobutton(mode_frame, text="双击Ctrl开始/单击结束", value='double_ctrl', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=1, sticky=tk.W)
-        ttk.Label(mode_frame, text="双击间隔 ≤ 0.5 秒", foreground='gray').grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
-        
-        # 文本处理模板
-        template_frame = ttk.LabelFrame(self.content_frame, text="文本处理模板", padding=10)
-        template_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.template_var = tk.StringVar(value="默认")
-        templates = ["默认", "邮件", "代码", "聊天"]
-        
-        for i, template in enumerate(templates):
-            ttk.Radiobutton(template_frame, text=template, variable=self.template_var, 
-                           value=template).grid(row=0, column=i, padx=10, sticky=tk.W)
-        
+        ttk.Label(mode_frame, text="双击间隔 ≤ 0.5 秒", foreground='gray').grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(4,0))
+
+        # 语言模式
+        lang_frame = ttk.LabelFrame(self.content_frame, text="语言模式", padding=10)
+        lang_frame.pack(fill=tk.X, pady=(0,15))
+        ttk.Radiobutton(lang_frame, text='中文', value='中文', variable=self.language_mode_var).grid(row=0, column=0, padx=6, sticky=tk.W)
+        ttk.Radiobutton(lang_frame, text='外语(英文输出)', value='外语', variable=self.language_mode_var).grid(row=0, column=1, padx=6, sticky=tk.W)
+        ttk.Label(lang_frame, text='外语模式下所有场景输出英文；中文模式按中文提示词。', foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(4,0))
+
+        # 场景选择
+        scene_frame = ttk.LabelFrame(self.content_frame, text="场景 (影响语义风格)", padding=10)
+        scene_frame.pack(fill=tk.X, pady=(0,15))
+        for i, scene in enumerate(["文本", "聊天", "邮件", "代码"]):
+            ttk.Radiobutton(scene_frame, text=scene, value=scene, variable=self.template_scene_var).grid(row=0, column=i, padx=8, sticky=tk.W)
+
+        # 提示词编辑
+        prompt_frame = ttk.LabelFrame(self.content_frame, text="提示词配置（优先级：场景 > 中文默认；外语模式自动英文）", padding=10)
+        prompt_frame.pack(fill=tk.BOTH, expand=True)
+        nb = ttk.Notebook(prompt_frame)
+        nb.pack(fill=tk.BOTH, expand=True)
+        self.prompt_text_widgets = {}
+
+        def add_tab(key: str, title: str):
+            tab = ttk.Frame(nb)
+            nb.add(tab, text=title)
+            tip = ("场景专属：留空回退到中文默认" if key != 'default' else "中文默认：所有场景(中文模式)回退使用")
+            ttk.Label(tab, text=tip, foreground='gray').pack(anchor=tk.W, pady=(0,4))
+            txt = scrolledtext.ScrolledText(tab, height=6, wrap=tk.WORD)
+            txt.pack(fill=tk.BOTH, expand=True)
+            if key == 'default':
+                txt.insert(tk.END, self.prompts.get('default') or self.builtin_default_prompt)
+            else:
+                val = self.prompts.get('scenes', {}).get(title)
+                if val:
+                    txt.insert(tk.END, val)
+            self.prompt_text_widgets[key] = txt
+
+        add_tab('default', '中文')
+        for scene in ["文本", "聊天", "邮件", "代码"]:
+            add_tab(scene, scene)
+
+        ttk.Button(prompt_frame, text="保存提示词", command=self.save_prompts_from_ui).pack(anchor=tk.E, pady=(6,0))
+
         # 其他设置
-        other_frame = ttk.LabelFrame(self.content_frame, text="其他设置", padding=10)
-        other_frame.pack(fill=tk.X, pady=(20, 0))
-        
+        other = ttk.LabelFrame(self.content_frame, text="其他设置", padding=10)
+        other.pack(fill=tk.X, pady=(15,0))
         self.auto_paste_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(other_frame, text="自动粘贴识别结果", 
-                       variable=self.auto_paste_var).pack(anchor=tk.W)
-        
+        ttk.Checkbutton(other, text="自动粘贴识别结果", variable=self.auto_paste_var).pack(anchor=tk.W)
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(other_frame, text="最小化到系统托盘", 
-                       variable=self.minimize_to_tray_var).pack(anchor=tk.W)
-        
+        ttk.Checkbutton(other, text="最小化到系统托盘", variable=self.minimize_to_tray_var).pack(anchor=tk.W)
         self.smart_template_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(other_frame, text="智能模板切换（根据当前应用自动选择模板）", 
-                       variable=self.smart_template_var).pack(anchor=tk.W)
+        ttk.Checkbutton(other, text="智能模板切换（自动选择场景）", variable=self.smart_template_var).pack(anchor=tk.W)
+
+    def save_prompts_from_ui(self):
+        """从界面采集并保存提示词配置"""
+        try:
+            # 汇总 default 与 scenes
+            default_widget = self.prompt_text_widgets.get('default')
+            default_content = default_widget.get(1.0, tk.END).strip() if default_widget else ''
+            scenes = {}
+            for scene in ["文本", "聊天", "邮件", "代码"]:
+                widget_key = scene
+                widget = self.prompt_text_widgets.get(widget_key)
+                if widget:
+                    content = widget.get(1.0, tk.END).strip()
+                    if content:
+                        scenes[scene] = content
+            # 更新内存结构
+            self.prompts['default'] = default_content or self.builtin_default_prompt
+            self.prompts['scenes'] = scenes
+            # 保存
+            self.save_prompts_config()
+            messagebox.showinfo("成功", "提示词配置已保存")
+        except Exception as e:
+            messagebox.showerror("错误", f"保存提示词失败: {e}")
     
     def show_help(self):
         """显示帮助页面"""
         self.clear_content()
-        
+
         title = ttk.Label(self.content_frame, text="帮助", font=('Arial', 18, 'bold'))
         title.pack(anchor=tk.W, pady=(0, 20))
-        
-        help_text = """
-使用说明：
 
-1. 设置快捷键
-   - 两种模式：
-     a) 按住说话：按住 Ctrl+Space（或自定义组合）开始，松开结束
-     b) 双击Ctrl：快速双击 Ctrl 开始录音；录音中再按一次 Ctrl 结束
-   - 在设置 -> 快捷键模式 中切换，按住模式下可编辑快捷键组合
-
-2. 语音识别
-   - 按住模式：按住快捷键开始录音，松开结束
-   - 双击Ctrl模式：双击开始，单击结束
-   - 处理后的文本会自动粘贴到当前光标位置（若启用）
-
-3. 智能模板切换
-   - 根据当前活动窗口自动选择模板（聊天/邮件/代码/默认）
-
-4. 文本处理模板
-   - 默认：去除语气词，修正错误
-   - 邮件：格式化为正式邮件
-   - 代码：生成代码实现
-   - 聊天：生成聊天回复
-
-5. 系统托盘
-   - 可最小化到系统托盘，右键图标查看菜单
-
-注意：确保麦克风权限及网络可用。
-        """
-        
+        help_text = (
+            "使用说明：\n\n"
+            "1. 设置快捷键\n"
+            "    - 两种模式：\n"
+            "      a) 按住说话：按住 Ctrl+Space（或自定义组合）开始，松开结束\n"
+            "      b) 双击Ctrl：快速双击 Ctrl 开始录音；录音中再按一次 Ctrl 结束\n"
+            "    - 在 设置 -> 快捷键模式 中切换；按住模式下可编辑快捷键组合\n\n"
+            "2. 语音识别\n"
+            "    - 按住模式：按住快捷键开始录音，松开结束\n"
+            "    - 双击Ctrl模式：双击开始，单击结束\n"
+            "    - 处理后的文本会自动粘贴到当前光标位置（若启用）\n\n"
+            "3. 语言模式 + 场景\n"
+            "    - 语言模式：中文 / 外语(英文输出)\n"
+            "    - 场景：文本 / 聊天 / 邮件 / 代码\n"
+            "    - 外语模式下所有场景统一英文输出；中文模式按中文提示词输出\n\n"
+            "4. 智能场景切换\n"
+            "    - 根据当前活动窗口自动选择 场景（不改变语言模式）\n"
+            "    - 例如 IDE -> 代码，聊天软件 -> 聊天，邮件客户端 -> 邮件\n\n"
+            "5. 自定义提示词\n"
+            "    - 设置页面底部 ‘提示词配置’：\n"
+            "      * ‘中文’ 标签：全局中文默认 system 提示词\n"
+            "      * 其他场景标签：该场景（中文模式）专属；留空回退中文默认\n"
+            "    - 优先级：场景中文提示词 > 中文默认提示词 > 内置默认\n"
+            "    - 外语模式会在选定提示词后自动附加英文输出指令\n"
+            "    - 点击 ‘保存提示词’ 写入 config.json (prompts)\n\n"
+            "6. 系统托盘\n"
+            "    - 可最小化到系统托盘，右键图标查看菜单\n\n"
+            "注意：确保麦克风权限与网络连接正常。"
+        )
         help_label = ttk.Label(self.content_frame, text=help_text, justify=tk.LEFT)
         help_label.pack(anchor=tk.W)
     
@@ -540,6 +601,60 @@ class VoiceRecognitionGUI:
             print(f"读取快捷键配置失败: {e}")
         return None, None
 
+    def load_prompts_config(self):
+        """加载提示词配置结构
+        期望结构:
+        {
+           "prompts": {
+               "default": "...",
+               "scenes": {"聊天": "...", "邮件": "...", ...}
+           }
+        }
+        兼容旧无 prompts 的情形。
+        """
+        data = {}
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f) or {}
+        except Exception as e:
+            print(f"读取提示词配置失败: {e}")
+            data = {}
+
+        prompts_section = data.get('prompts') or {}
+
+        # default 视为中文默认（兼容旧 key '中文'）
+        default_prompt = (
+            prompts_section.get('default')
+            or prompts_section.get('中文')
+            or (self.builtin_default_prompt if hasattr(self, 'builtin_default_prompt') else "")
+        )
+        scenes = prompts_section.get('scenes') or {}
+
+        return {'default': default_prompt, 'scenes': scenes}
+
+    def save_prompts_config(self):
+        """保存当前 self.prompts 到配置文件（合并原有字段）"""
+        data = {}
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f) or {}
+        except Exception as e:
+            print(f"读取原配置失败(保存提示词时): {e}")
+            data = {}
+
+        data.setdefault('prompts', {})
+        data['prompts']['default'] = self.prompts.get('default') or self.builtin_default_prompt
+        data['prompts']['scenes'] = self.prompts.get('scenes') or {}
+
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print("已保存提示词配置")
+        except Exception as e:
+            print(f"保存提示词配置失败: {e}")
+
     def save_hotkey_config(self):
         """保存当前快捷键与模式到配置文件（与现有 config.json 合并）"""
         data = {}
@@ -591,9 +706,9 @@ class VoiceRecognitionGUI:
             return None, None
     
     def get_smart_template(self):
-        """根据当前活动窗口智能选择模板"""
+        """根据当前活动窗口智能选择场景 (不含语言模式)"""
         if not self.smart_template_var.get():
-            return self.template_var.get()
+            return self.template_scene_var.get()
         
         process_name, window_title = self.get_active_window_process()
         
@@ -601,24 +716,25 @@ class VoiceRecognitionGUI:
             # 检查进程名映射
             if process_name in self.app_template_mapping:
                 template = self.app_template_mapping[process_name]
-                print(f"检测到应用: {process_name}, 自动切换模板: {template}")
+                print(f"检测到应用: {process_name}, 自动切换场景: {template}")
+                if template == '默认':
+                    template = '文本'
                 return template
             
             # 检查窗口标题关键词
             if window_title:
                 title_lower = window_title.lower()
                 if any(keyword in title_lower for keyword in ['微信', 'wechat', 'qq', '钉钉']):
-                    print(f"检测到聊天窗口: {window_title}, 切换到聊天模板")
+                    print(f"检测到聊天窗口: {window_title}, 切换到聊天场景")
                     return '聊天'
                 elif any(keyword in title_lower for keyword in ['邮件', 'mail', 'outlook', '邮箱']):
-                    print(f"检测到邮件窗口: {window_title}, 切换到邮件模板")
+                    print(f"检测到邮件窗口: {window_title}, 切换到邮件场景")
                     return '邮件'
                 elif any(keyword in title_lower for keyword in ['code', 'visual studio', 'pycharm', 'idea']):
-                    print(f"检测到代码编辑器: {window_title}, 切换到代码模板")
+                    print(f"检测到代码编辑器: {window_title}, 切换到代码场景")
                     return '代码'
-        
-        # 默认返回用户设置的模板
-        return self.template_var.get()
+        # 默认返回用户选择的场景
+        return self.template_scene_var.get()
     
     def start_recording(self):
         """开始录音"""
@@ -948,8 +1064,11 @@ class VoiceRecognitionGUI:
         """显示录音提示"""
         if self.recording_indicator is None:
             self.create_recording_indicator()
-        self.recording_indicator.deiconify()
-        self.recording_indicator.lift()
+        # 再次判定，保证非 None（类型守卫）
+        indicator = self.recording_indicator
+        if indicator is not None:
+            indicator.deiconify()  # type: ignore[attr-defined]
+            indicator.lift()       # type: ignore[attr-defined]
     
     def hide_recording_indicator(self):
         """隐藏录音提示"""
@@ -1067,25 +1186,41 @@ class CustomRecognizer(HoldToTalkRecognizer):
             if results:
                 final_text = ' '.join(results)
                 print('Final recognition result:\n' + final_text)
-                
-                # 使用智能模板选择
-                template = self.gui_app.get_smart_template() if hasattr(self.gui_app, 'get_smart_template') else "默认"
-                
-                # 选择消息模板
-                if template == "邮件":
-                    from demo4 import EMAIL_MESSAGE
-                    messages = EMAIL_MESSAGE.copy()
-                elif template == "代码":
-                    from demo4 import CODE_MESSAGE
-                    messages = CODE_MESSAGE.copy()
-                elif template == "聊天":
-                    from demo4 import CHAT_MESSAGE
-                    messages = CHAT_MESSAGE.copy()
-                else:
-                    from demo4 import DEFAULT_MESSAGE
-                    messages = DEFAULT_MESSAGE.copy()
-                
-                messages[-1]['content'] = final_text
+                # 1. 获取当前场景（含智能切换）
+                template_name = self.gui_app.get_smart_template() if hasattr(self.gui_app, 'get_smart_template') else "文本"
+                lang_mode = self.gui_app.language_mode_var.get() if hasattr(self.gui_app, 'language_mode_var') else '中文'
+                print(f"当前语言模式: {lang_mode}, 场景: {template_name}")
+
+                # 2. 根据配置构造 system 提示词（优先：场景 > 默认 > 内置）
+                system_prompt = None
+                try:
+                    prompts_cfg = getattr(self.gui_app, 'prompts', {})
+                    scenes_cfg = prompts_cfg.get('scenes', {}) if isinstance(prompts_cfg, dict) else {}
+                    # 场景命名兼容：可能选择 "默认" 或 "文本"
+                    if template_name in scenes_cfg and scenes_cfg.get(template_name):
+                        system_prompt = scenes_cfg.get(template_name)
+                    else:
+                        # "文本" 场景可回退到 "默认" 或 default
+                        system_prompt = prompts_cfg.get('default') or getattr(self.gui_app, 'builtin_default_prompt', '')
+                except Exception as e:
+                    print(f"读取提示词配置异常，使用内置默认: {e}")
+                    system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
+
+                if not system_prompt:
+                    system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
+
+                # 外语模式统一附加英文输出要求
+                if lang_mode == '外语':
+                    # 简单策略：在 system 提示词后追加英文指令
+                    system_prompt = system_prompt.strip() + "\nPlease respond in clear, concise, natural English, refining the user's intent accordingly."
+
+                # 3. 组装 messages
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": final_text}
+                ]
+                print(f"使用 system 提示词(截断显示): {system_prompt[:60]}...")
+                print(f"messages: {messages}")
                 
                 try:
                     formatted = self._format_text.generate(messages)

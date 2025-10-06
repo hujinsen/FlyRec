@@ -1,12 +1,12 @@
 {
-  "total_words": 447,
-  "total_time": 231,
-  "sessions_count": 18,
+  "total_words": 825,
+  "total_time": 338,
+  "sessions_count": 25,
   "last_30_days": [
     {
       "date": "2025-10-06",
-      "words": 447,
-      "sessions": 18
+      "words": 825,
+      "sessions": 25
     }
   ]
 }

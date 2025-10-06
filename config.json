@@ -1,4 +1,8 @@
 {
   "hotkey": "ctrl+space",
-  "hotkey_mode": "double_ctrl"
+  "hotkey_mode": "double_ctrl",
+  "prompts": {
+    "default": "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。",
+    "scenes": {}
+  }
 }
