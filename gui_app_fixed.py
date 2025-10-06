@@ -54,7 +54,7 @@ class VoiceRecognitionGUI:
         # 加载提示词配置（中文默认 + 场景提示词）
         self.prompts = self.load_prompts_config()
         # 内置默认回退提示词（仅在缺失时使用）
-        self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。"
+        self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
         # 语言模式(中文/外语) + 场景(文本/聊天/邮件/代码)
         self.language_mode_var = tk.StringVar(value='中文')
         self.template_scene_var = tk.StringVar(value='文本')
@@ -193,7 +193,7 @@ class VoiceRecognitionGUI:
         sidebar.pack_propagate(False)
         
         # 标题
-        title_label = ttk.Label(sidebar, text="FlyRecDemo", font=('Arial', 16, 'bold'))
+        title_label = ttk.Label(sidebar, text="独白", font=('Arial', 16, 'bold'))
         title_label.pack(pady=(0, 20))
         
         # 导航按钮
