@@ -17,14 +17,12 @@ from PIL import Image, ImageDraw
 from demo4 import HoldToTalkRecognizer
 import keyboard
 import sys
-try:
-    import psutil
-    import win32gui
-    import win32process
-    SMART_TEMPLATE_AVAILABLE = True
-except ImportError:
-    SMART_TEMPLATE_AVAILABLE = False
-    print("警告: psutil 或 pywin32 未安装，智能模板切换功能将不可用")
+
+import psutil
+import win32gui
+import win32process
+SMART_TEMPLATE_AVAILABLE = True
+
 
 
 class VoiceRecognitionGUI:
@@ -33,7 +31,7 @@ class VoiceRecognitionGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("FlyRecDemo")
-        self.root.geometry("800x600")
+        self.root.geometry("800x850")
         
         # 数据存储
         self.stats_file = "voice_stats.json"
@@ -44,6 +42,15 @@ class VoiceRecognitionGUI:
         self.recognizer = None
         self.is_recording = False
         self.current_hotkey = "ctrl+space"
+        # 从配置文件加载快捷键及模式
+        self.config_file = "config.json"
+        loaded_hotkey, loaded_mode = self.load_hotkey_config()
+        if loaded_hotkey:
+            self.current_hotkey = loaded_hotkey
+        # 新增: 快捷键模式变量 (hold: 按住说话, double_ctrl: 双击Ctrl开始/单击结束)
+        self.hotkey_mode_var = tk.StringVar(value=loaded_mode or "hold")
+        self.double_ctrl_interval = 0.5  # 双击 Ctrl 判定最大间隔(秒)
+        self._last_ctrl_release_time = 0.0
         
         # 按键监听相关
         self.hotkey_parts = []
@@ -322,8 +329,16 @@ class VoiceRecognitionGUI:
         ttk.Button(hotkey_frame, text="应用", 
                   command=self.apply_hotkey).grid(row=0, column=2, padx=(10, 0))
         
-        ttk.Label(hotkey_frame, text="提示: 使用 ctrl+space 格式", 
+        ttk.Label(hotkey_frame, text="提示: ctrl+space 格式 (仅按住模式有效)", 
                  foreground='gray').grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5, 0))
+        
+        # 模式选择
+        mode_frame = ttk.LabelFrame(self.content_frame, text="快捷键模式", padding=10)
+        mode_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        ttk.Radiobutton(mode_frame, text="按住说话 (Ctrl+Space)", value='hold', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=0, sticky=tk.W, padx=(0, 15))
+        ttk.Radiobutton(mode_frame, text="双击Ctrl开始/单击结束", value='double_ctrl', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=1, sticky=tk.W)
+        ttk.Label(mode_frame, text="双击间隔 ≤ 0.5 秒", foreground='gray').grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
         
         # 文本处理模板
         template_frame = ttk.LabelFrame(self.content_frame, text="文本处理模板", padding=10)
@@ -363,19 +378,18 @@ class VoiceRecognitionGUI:
 使用说明：
 
 1. 设置快捷键
-   - 在设置页面可以自定义全局快捷键
-   - 默认快捷键为 Ctrl+Space
-   - 支持组合键，如 ctrl+alt+v
+   - 两种模式：
+     a) 按住说话：按住 Ctrl+Space（或自定义组合）开始，松开结束
+     b) 双击Ctrl：快速双击 Ctrl 开始录音；录音中再按一次 Ctrl 结束
+   - 在设置 -> 快捷键模式 中切换，按住模式下可编辑快捷键组合
 
 2. 语音识别
-   - 按住快捷键开始录音
-   - 松开快捷键结束录音并处理
-   - 处理后的文本会自动粘贴到当前光标位置
+   - 按住模式：按住快捷键开始录音，松开结束
+   - 双击Ctrl模式：双击开始，单击结束
+   - 处理后的文本会自动粘贴到当前光标位置（若启用）
 
 3. 智能模板切换
-   - 系统会自动检测当前活动窗口
-   - 根据应用类型自动选择合适的模板
-   - 支持聊天、邮件、代码、默认四种模板
+   - 根据当前活动窗口自动选择模板（聊天/邮件/代码/默认）
 
 4. 文本处理模板
    - 默认：去除语气词，修正错误
@@ -384,13 +398,9 @@ class VoiceRecognitionGUI:
    - 聊天：生成聊天回复
 
 5. 系统托盘
-   - 可以最小化到系统托盘
-   - 右键托盘图标查看菜单
+   - 可最小化到系统托盘，右键图标查看菜单
 
-注意事项：
-- 确保麦克风权限已开启
-- 需要网络连接进行语音识别
-- 首次使用需要配置 API Key
+注意：确保麦克风权限及网络可用。
         """
         
         help_label = ttk.Label(self.content_frame, text=help_text, justify=tk.LEFT)
@@ -399,19 +409,48 @@ class VoiceRecognitionGUI:
     def setup_hotkey(self):
         """设置全局快捷键"""
         try:
-            # 移除旧的快捷键监听器
             keyboard.unhook_all()
-            
-            # 解析快捷键组合
-            self.hotkey_parts = self.current_hotkey.lower().replace(' ', '').split('+')
-            
-            # 启动快捷键检测线程
-            self.hotkey_thread = threading.Thread(target=self.hotkey_monitor, daemon=True)
-            self.hotkey_thread.start()
-            
-            print(f"已设置快捷键: {self.current_hotkey}")
+            # 保护性获取模式值
+            mode_var = getattr(self, 'hotkey_mode_var', None)
+            mode = 'hold'
+            try:
+                if mode_var is not None:
+                    mode = mode_var.get() or 'hold'
+            except Exception:
+                mode = 'hold'
+            if mode == 'hold':
+                # 解析快捷键组合并启动监控线程
+                self.hotkey_parts = self.current_hotkey.lower().replace(' ', '').split('+')
+                if not self.hotkey_thread or not self.hotkey_thread.is_alive():
+                    self.hotkey_thread = threading.Thread(target=self.hotkey_monitor, daemon=True)
+                    self.hotkey_thread.start()
+                print(f"已设置按住模式快捷键: {self.current_hotkey}")
+            else:
+                # 双击Ctrl模式: 监听 Ctrl 释放
+                self._last_ctrl_release_time = 0.0
+                def _on_release(event):
+                    try:
+                        if event.name in ('ctrl', 'left ctrl', 'right ctrl'):
+                            self.handle_double_ctrl_release()
+                    except Exception as ee:
+                        print(f"双击Ctrl监听错误: {ee}")
+                keyboard.on_release(_on_release)
+                print("已设置双击Ctrl模式: 快速双击Ctrl开始，录音中再按一次Ctrl结束")
         except Exception as e:
             messagebox.showerror("错误", f"设置快捷键失败: {e}")
+
+    def handle_double_ctrl_release(self):
+        """处理双击Ctrl逻辑: 双击开始，再按一次结束"""
+        now = time.time()
+        if not self.is_recording:
+            # 双击判定
+            if now - self._last_ctrl_release_time <= getattr(self, 'double_ctrl_interval', 0.5):
+                self.start_recording()
+                self._last_ctrl_release_time = 0.0
+            else:
+                self._last_ctrl_release_time = now
+        else:
+            self.stop_recording()
     
     def hotkey_monitor(self):
         """快捷键监控线程"""
@@ -419,22 +458,18 @@ class VoiceRecognitionGUI:
         
         while True:
             try:
-                # 检查快捷键组合是否被按下
-                is_pressed = self.is_hotkey_combination_pressed()
-                
-                # 状态改变时触发相应动作
-                if is_pressed and not was_pressed:
-                    # 快捷键刚被按下
-                    if not self.is_recording:
-                        self.root.after(0, self.start_recording)
-                elif was_pressed and not is_pressed:
-                    # 快捷键刚被释放
-                    if self.is_recording:
-                        self.root.after(0, self.stop_recording)
-                
-                was_pressed = is_pressed
-                time.sleep(0.05)  # 50ms 检查间隔
-                
+                if getattr(self, 'hotkey_mode_var', None) and self.hotkey_mode_var.get() == 'hold':
+                    is_pressed = self.is_hotkey_combination_pressed()
+                    if is_pressed and not was_pressed:
+                        if not self.is_recording:
+                            self.root.after(0, self.start_recording)
+                    elif was_pressed and not is_pressed:
+                        if self.is_recording:
+                            self.root.after(0, self.stop_recording)
+                    was_pressed = is_pressed
+                else:
+                    was_pressed = False
+                time.sleep(0.05)
             except Exception as e:
                 print(f"快捷键监控错误: {e}")
                 time.sleep(0.1)
@@ -465,9 +500,66 @@ class VoiceRecognitionGUI:
         new_hotkey = self.hotkey_var.get().strip()
         if new_hotkey:
             self.current_hotkey = new_hotkey
-            self.setup_hotkey()
+            if self.hotkey_mode_var.get() == 'hold':
+                self.setup_hotkey()
             self.hotkey_label.config(text=f"快捷键: {self.current_hotkey}")
+            # 保存到配置
+            self.save_hotkey_config()
             messagebox.showinfo("成功", f"快捷键已更新为: {new_hotkey}")
+
+    def on_hotkey_mode_change(self):
+        """切换快捷键模式"""
+        self.setup_hotkey()
+        mode = self.hotkey_mode_var.get()
+        # 更新侧边栏显示
+        try:
+            if mode == 'double_ctrl':
+                self.hotkey_label.config(text="快捷键模式: 双击Ctrl")
+            else:
+                self.hotkey_label.config(text=f"快捷键: {self.current_hotkey}")
+        except Exception:
+            pass
+        # 模式改变后保存配置
+        self.save_hotkey_config()
+
+    def load_hotkey_config(self):
+        """从配置文件加载快捷键与模式
+        返回 (hotkey, mode) 若不存在返回 (None, None)
+        """
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                hotkey = cfg.get('hotkey') or cfg.get('current_hotkey')
+                mode = cfg.get('hotkey_mode') or cfg.get('last_hotkey_mode')
+                # 兼容旧值: 如果模式值不合法则返回None
+                if mode not in ('hold', 'double_ctrl'):
+                    mode = None
+                return hotkey, mode
+        except Exception as e:
+            print(f"读取快捷键配置失败: {e}")
+        return None, None
+
+    def save_hotkey_config(self):
+        """保存当前快捷键与模式到配置文件（与现有 config.json 合并）"""
+        data = {}
+        # 读取现有配置以合并
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f) or {}
+        except Exception as e:
+            print(f"读取旧配置合并失败: {e}")
+            data = {}
+        # 更新字段
+        data['hotkey'] = self.current_hotkey
+        data['hotkey_mode'] = self.hotkey_mode_var.get()
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"已保存快捷键配置: {data}")
+        except Exception as e:
+            print(f"保存快捷键配置失败: {e}")
     
     def get_active_window_process(self):
         """获取当前活动窗口的进程信息"""

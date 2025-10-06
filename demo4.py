@@ -24,21 +24,21 @@ FORMAT_PCM = 'pcm'  # the format of the audio data
 BLOCK_SIZE = 3200  # number of frames per buffer
 
 DEFAULT_MESSAGE = [
-    {"role": "system", "content": "你是复述者，不需要回答问题，尽可能输出文本原文"},
-    {"role": "user", "content": "你是谁？"},
+    {"role": "system", "content": "你善于捕捉用户的真实意图，尽量再不改变原文的状态修，输出用户想表达意思的文本。"},
+    {"role": "user", "content": "待定义"},
 ]
 
 CHAT_MESSAGE = [
-    {"role": "system", "content": "你是聊天高手，回答简洁有趣。擅长使用emoji表情。"},
+    {"role": "system", "content": "用户口述文本发给你，你首先理解用户真实意图，根据用户的真实意图，优化用户口述文本。"},
     {"role": "user", "content": "待定义"},
 ]
 EMAIL_MESSAGE = [
-    {"role": "system", "content": "你是专业的邮件助手，帮我把下面的内容润色成正式的邮件。要求简洁、礼貌、专业、有条理。我叫胡进森，邮箱是：<hujsen@163.com>,电话是：13290818863，个人网站是：https://hujinsen.github.io/。"},
+    {"role": "system", "content": "你是邮件助手，能够对邮件内容进行润色。我的个人信息如下：姓名：胡进森，邮箱是：<hujsen@163.com>,电话是：13290818863，个人网站是：https://hujinsen.github.io/。"},
     {"role": "user", "content": "待定义"},
 ]
 
 CODE_MESSAGE = [
-    {"role": "system", "content": "你是专业的开发工程师"},
+    {"role": "system", "content": "你是编程助手，理解用户输入内容的语义，输出能表达用户真实诉求的文本"},
     {"role": "user", "content": "待定义"},
 ]
 
