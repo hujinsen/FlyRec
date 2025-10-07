@@ -10,6 +10,7 @@
 	- 双击Ctrl模式：快速双击 Ctrl 开始录音，录音中再按一次 Ctrl 结束
 	- 在 设置 -> 快捷键模式 中切换
 	- 双击判定默认最大间隔 0.5s
+- 新增：录音开始/结束音效（`assets/start_rec.mp3`, `assets/end_rec.mp3`），可直接替换文件自定义提示音
 
 ### 📊 统计分析
 - **使用统计**：总词数、节省时间、平均WPM
@@ -26,7 +27,12 @@
 ## 安装依赖
 
 ```bash
-pip install dashscope pyaudio pynput pyperclip pyautogui pystray pillow keyboard
+pip install dashscope pyaudio pynput pyperclip pyautogui pystray pillow keyboard playsound
+```
+
+若使用 `uv` 或 `pip` 根据 `pyproject.toml` 安装：
+```bash
+pip install .
 ```
 
 ## 使用方法
@@ -43,10 +49,10 @@ dashscope.api_key = 'your-api-key-here'
 ```
 
 ### 3. 使用语音识别
-1. 按住 `Ctrl+Space`（或自定义快捷键）开始录音
-2. 说话内容会实时识别
-3. 松开快捷键停止录音
-4. 处理后的文本会自动粘贴到当前光标位置
+1. 按住 `Ctrl+Space`（或自定义快捷键）开始录音（或双击Ctrl）
+2. 播放开始提示音后说话
+3. 松开快捷键或再次按Ctrl停止录音，播放结束提示音
+4. 处理后的文本会自动粘贴到当前光标位置（若开启）
 
 ### 4. 文本处理模板
 
@@ -95,12 +101,18 @@ dashscope.api_key = 'your-api-key-here'
 - `ctrl+alt+r`
 - `f1`、`f2` 等功能键
 
+## 音效自定义
+- 替换 `assets/start_rec.mp3` 为自定义开始音效
+- 替换 `assets/end_rec.mp3` 为自定义结束音效
+- 保持文件名不变即可，无需修改代码
+
 ## 注意事项
 
 1. **麦克风权限**：确保应用有麦克风访问权限
 2. **网络连接**：需要网络连接进行语音识别
 3. **API 配额**：注意阿里云 API 的使用配额
 4. **系统兼容性**：支持 Windows、Mac、Linux
+5. **提示音不播放**：检查是否安装 `playsound`，或 MP3 是否能被系统解码（尝试重新转换为 128kbps MP3）
 
 ## 故障排除
 
@@ -127,15 +139,18 @@ dashscope.api_key = 'your-api-key-here'
 - **快捷键监听**：keyboard
 - **系统集成**：pystray（系统托盘）
 - **自动输入**：pyautogui
+- **提示音播放**：playsound（独立线程，不阻塞界面）
 
 ## 开发说明
 
 ### 文件结构
 - `gui_app.py`：主GUI应用
+- `gui_app_fixed.py`：修复版 GUI（新增提示音逻辑）
 - `demo4.py`：语音识别核心逻辑
 - `text_format.py`：文本生成API封装
 - `voice_stats.json`：统计数据存储
 - `transcripts.json`：识别记录存储
+- `assets/`：提示音资源
 
 ### 扩展功能
 可以通过修改以下部分来扩展功能：
@@ -143,6 +158,7 @@ dashscope.api_key = 'your-api-key-here'
 - 自定义统计分析
 - 集成其他语音识别API
 - 添加更多输出格式
+- 使用其他播放库（如 pygame / pydub+simpleaudio）实现淡入淡出或并行多音效
 
 ## 许可证
 

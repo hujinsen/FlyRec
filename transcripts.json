@@ -1,5 +1,71 @@
 [
   {
+    "timestamp": "2025-10-07T11:29:08.256096",
+    "original": "增加录音开始和结束时呃的一个提示音。",
+    "formatted": "在录音开始和结束时增加提示音。",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-07T11:28:50.669690",
+    "original": "增加录音开始和结束的提示音。 在网上找了开源的。",
+    "formatted": "增加录音开始和结束的提示音，已经在网上找了开源的资源。",
+    "word_count": 21
+  },
+  {
+    "timestamp": "2025-10-07T11:28:05.038016",
+    "original": "开始录音了，开始录音了。",
+    "formatted": "开始录音了。",
+    "word_count": 10
+  },
+  {
+    "timestamp": "2025-10-07T11:20:40.123563",
+    "original": "我又弄了一个。 我现在把它切换成英文版，然后双击 Ctrl 键会发出一个气泡音，呃，单击再次单击 Ctrl 会结束录音，也会播放一个简短的音频。",
+    "formatted": "I've set up another one. Now when I switch it to English, double-clicking the Ctrl key produces a bubble sound, and single-clicking Ctrl again stops the recording and plays back a short audio clip.",
+    "word_count": 61
+  },
+  {
+    "timestamp": "2025-10-07T11:20:06.571511",
+    "original": "开始录音了，我最近我刚刚给这个录音加了一个声音提示功能，双击Ctrl键，然后会有一个气泡音出来，然后这个时候就开始可以开始说话了，然后要停止录音的话，按一下单安单击一下Ctrl键。 然后会播放一个停止录音的一个动画和声音。",
+    "formatted": "我最近给录音功能添加了一个声音提示：双击 Ctrl 键会发出一个气泡音，表示可以开始说话；单击 Ctrl 键则会播放停止录音的动画和声音，表示录音已结束。",
+    "word_count": 102
+  },
+  {
+    "timestamp": "2025-10-07T11:18:24.709420",
+    "original": "开始录音。",
+    "formatted": "开始录音。",
+    "word_count": 4
+  },
+  {
+    "timestamp": "2025-10-07T10:56:34.339562",
+    "original": "开始录音了。",
+    "formatted": "开始录音了。",
+    "word_count": 5
+  },
+  {
+    "timestamp": "2025-10-07T10:55:24.852335",
+    "original": "开始录音了。",
+    "formatted": "开始录音了。",
+    "word_count": 5
+  },
+  {
+    "timestamp": "2025-10-06T19:48:20.198539",
+    "original": "Pismon是一款专为Mac和Windows设计的AI写作助手，帮你写得更快更聪明。无论是写邮件、改文档还是翻译内容，它都能一键搞定，让你的文字更流畅、更专业。",
+    "formatted": "Pismon是一款专为Mac和Windows打造的AI写作助手，能够帮助用户更快、更智能地完成写作任务。无论是撰写邮件、修改文档还是翻译内容，都能一键高效完成，让文字表达更加流畅与专业。",
+    "word_count": 73
+  },
+  {
+    "timestamp": "2025-10-06T19:46:01.056018",
+    "original": "Pismo是一款专为Mac和Windows设计的AI写作助手，帮你写得更快、更聪明。无论是写邮件、改文档，还是翻译内容，它都能一键搞定，让你的文字更流畅、更专业。",
+    "formatted": "Pismo is an AI writing assistant designed for Mac and Windows that helps you write faster and smarter. Whether you're drafting emails, editing documents, or translating content, Pismo handles it all with one click, making your writing smoother and more professional.",
+    "word_count": 72
+  },
+  {
+    "timestamp": "2025-10-06T19:44:38.657125",
+    "original": "我再来测试一下这个翻译的功能好不好用。",
+    "formatted": "I'll test this translation feature again to see how well it works.",
+    "word_count": 18
+  },
+  {
     "timestamp": "2025-10-06T16:31:53.765804",
     "original": "写封邮件给张三，告诉他明天早上七点之前过来，带好必备的工具，我们一起去山上劳动。",
     "formatted": "Subject: Please Arrive by 7 AM Tomorrow for Work on the Mountain\n\nHi Zhang San,\n\nPlease come by 7:00 AM tomorrow morning and bring all the necessary tools. We’ll be heading up the mountain to work together.\n\nSee you then.",

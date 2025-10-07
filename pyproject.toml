@@ -18,5 +18,7 @@ dependencies = [
     "pystray>=0.19.5",
     "pywin32>=311",
     "requests==2.31.0",
+    "sounddevice>=0.5.2",
+    "soundfile>=0.13.1",
     "websocket-client>=1.8.0",
 ]

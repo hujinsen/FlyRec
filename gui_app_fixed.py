@@ -26,6 +26,13 @@ try:
 except ImportError:
     print("win32gui 和 win32process 模块未安装，将无法使用系统托盘")
 
+# 导入播放音效库（新增）
+import sounddevice as sd
+try:
+    import soundfile as sf  # 新增，用于读取wav
+except ImportError:
+    sf = None
+    print("缺少 soundfile 库，音效功能不可用。安装: uv add soundfile  或  pip install soundfile")
 
 
 
@@ -34,6 +41,14 @@ class VoiceRecognitionGUI:
     
     def __init__(self):
         self.root = tk.Tk()
+        # 预加载音效缓存结构: { 'start': (data, samplerate), 'end': (data, samplerate) }
+        self._sound_cache = {}
+        # 标记是否已尝试预加载，避免重复磁盘IO
+        self._sound_preloaded = False
+        
+        # 启动线程，预加载音效
+        # threading.Thread(target=self.preload_sounds).start()
+        
         self.root.title("FlyRecDemo")
         self.root.geometry("800x850")
         
@@ -744,6 +759,8 @@ class VoiceRecognitionGUI:
         try:
             self.is_recording = True
             self.status_label.config(text="状态: 录音中", foreground='red')
+            # 播放开始录音音效
+            self.play_sound('start')
             
             # 显示录音提示
             self.show_recording_indicator()
@@ -770,6 +787,8 @@ class VoiceRecognitionGUI:
         try:
             self.is_recording = False
             self.status_label.config(text="状态: 处理中", foreground='orange')
+            # 播放结束录音音效
+            self.play_sound('end')
             
             # 隐藏录音提示
             self.hide_recording_indicator()
@@ -868,7 +887,7 @@ class VoiceRecognitionGUI:
                 if 'wmp' in self.stats_cards:
                     widget = self.stats_cards['wmp']
                     if hasattr(widget, 'winfo_exists') and widget.winfo_exists():
-                        widget.config(text=str(self.calculate_wmp()))
+                        widget.config(text=str(self.calculate_wpm()))
         except Exception as e:
             print(f"更新统计显示出错: {e}")
     
@@ -1123,6 +1142,80 @@ class VoiceRecognitionGUI:
         except KeyboardInterrupt:
             self.quit_app()
 
+    def preload_sounds(self):
+        """预加载音效数据到内存，短 wav 减少播放时 I/O.
+        若 soundfile 缺失或文件不存在则忽略。该操作只执行一次。
+        """
+        if self._sound_preloaded:
+            return
+        self._sound_preloaded = True
+        if sf is None:
+            return
+        base_dir = os.path.dirname(__file__)
+        mapping = {'start': 'start_rec.wav', 'end': 'end_rec.wav'}
+        for key, fname in mapping.items():
+            path = os.path.join(base_dir, 'assets', fname)
+            if os.path.exists(path):
+                try:
+                    data, sr = sf.read(path, dtype='float32')
+                    self._sound_cache[key] = (data, sr)
+                except Exception as e:
+                    print(f"预加载音效失败 {fname}: {e}")
+            else:
+                # 不打印频繁警告，预加载阶段只记录一次
+                print(f"预加载跳过(不存在): {path}")
+
+    # ================== 音效播放相关（新增） ==================
+    def play_sound(self, which: str):
+        """播放开始/结束录音音效 (wav)
+        which: 'start' 或 'end'
+        使用单独线程，避免阻塞 GUI。若文件不存在则打印警告后忽略。
+        仅支持 wav：assets/start_rec.wav, assets/end_rec.wav
+        优先使用预加载缓存。
+        """
+        if which not in ('start', 'end'):
+            return
+        # 若尚未预加载，尝试触发一次（懒加载）
+        if not self._sound_preloaded:
+            self.preload_sounds()
+        threading.Thread(target=self._play_sound_cached_or_load, args=(which,), daemon=True).start()
+
+    def _play_sound_cached_or_load(self, which: str):
+        if sf is None:
+            return
+        # 1. 直接用缓存
+        if which in self._sound_cache:
+            data, sr = self._sound_cache[which]
+            try:
+                sd.play(data, sr, blocking=True)
+            except Exception as e:
+                print(f"音效播放失败(缓存): {e}")
+            return
+        # 2. 缓存没有 -> 尝试磁盘读取一次并放入缓存
+        base_dir = os.path.dirname(__file__)
+        fname = 'start_rec.wav' if which == 'start' else 'end_rec.wav'
+        path = os.path.join(base_dir, 'assets', fname)
+        if not os.path.exists(path):
+            print(f"音效文件不存在(跳过): {path}")
+            return
+        try:
+            data, sr = sf.read(path, dtype='float32')
+            self._sound_cache[which] = (data, sr)
+            sd.play(data, sr, blocking=True)
+        except Exception as e:
+            print(f"播放音效失败(磁盘加载): {e} -> {path}")
+
+    # 保留旧的 _play_sound_file 名称兼容（不再直接使用）
+    def _play_sound_file(self, path: str):
+        if sf is None:
+            print("soundfile 未安装，无法播放: ", path)
+            return
+        try:
+            data, samplerate = sf.read(path, dtype='float32')
+            sd.play(data, samplerate, blocking=True)
+        except Exception as e:
+            print(f"播放音效失败: {e} -> {path}\n若文件为 mp3，可先转换: from pydub import AudioSegment; AudioSegment.from_mp3('x.mp3').export('x.wav', format='wav')")
+
 
 class CustomRecognizer(HoldToTalkRecognizer):
     """自定义识别器，集成GUI回调"""
@@ -1269,8 +1362,7 @@ class CustomRecognizer(HoldToTalkRecognizer):
             
             # 清空结果
             self._results = []
-
-
+            
 if __name__ == "__main__":
     app = VoiceRecognitionGUI()
     app.run()
