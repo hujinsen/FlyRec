@@ -47,7 +47,7 @@ class VoiceRecognitionGUI:
         self._sound_preloaded = False
         
         # 启动线程，预加载音效
-        # threading.Thread(target=self.preload_sounds).start()
+        threading.Thread(target=self.preload_sounds).start()
         
         self.root.title("FlyRecDemo")
         self.root.geometry("800x850")
@@ -369,12 +369,12 @@ class VoiceRecognitionGUI:
         ttk.Radiobutton(mode_frame, text="双击Ctrl开始/单击结束", value='double_ctrl', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=1, sticky=tk.W)
         ttk.Label(mode_frame, text="双击间隔 ≤ 0.5 秒", foreground='gray').grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(4,0))
 
-        # 语言模式
-        lang_frame = ttk.LabelFrame(self.content_frame, text="语言模式", padding=10)
+        # 输出语言
+        lang_frame = ttk.LabelFrame(self.content_frame, text="输出语言", padding=10)
         lang_frame.pack(fill=tk.X, pady=(0,15))
         ttk.Radiobutton(lang_frame, text='中文', value='中文', variable=self.language_mode_var).grid(row=0, column=0, padx=6, sticky=tk.W)
-        ttk.Radiobutton(lang_frame, text='外语(英文输出)', value='外语', variable=self.language_mode_var).grid(row=0, column=1, padx=6, sticky=tk.W)
-        ttk.Label(lang_frame, text='外语模式下所有场景输出英文；中文模式按中文提示词。', foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(4,0))
+        ttk.Radiobutton(lang_frame, text='英语', value='英语', variable=self.language_mode_var).grid(row=0, column=1, padx=6, sticky=tk.W)
+        ttk.Label(lang_frame, text='中文模式输出中文，英语模式输出英语。', foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(4,0))
 
         # 场景选择
         scene_frame = ttk.LabelFrame(self.content_frame, text="场景 (影响语义风格)", padding=10)
