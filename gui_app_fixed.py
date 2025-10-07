@@ -70,6 +70,24 @@ class VoiceRecognitionGUI:
         self.prompts = self.load_prompts_config()
         # 内置默认回退提示词（仅在缺失时使用）
         self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
+        # 内置场景级提示词（当某场景未单独配置时可作为增强型回退）
+        # 优先级：用户场景提示词 > 用户默认中文提示词 > 内置场景提示词 > 内置默认提示词
+        # （之前逻辑：用户场景 > 用户默认 > 内置默认；现在插入内置场景层级，提升“邮件”等体验）
+        self.builtin_scene_prompts = {
+            '聊天': (
+                "用户正在用聊天应用，根据用户口述输出自然、简洁、友好的聊天文本：\n"
+                "- 保留原本语气（口语/轻松）\n- 修正明显错别字与语序\n- 不扩写无关内容，不加入解释\n- 只输出润色后的文本，不加前缀或说明。"
+            ),
+            '邮件': (
+                "用户正在写邮件，请将用户口述整理 / 润色成一封正式、礼貌、结构清晰的邮件：\n"
+                "要求：\n1. 保留关键信息与时间节点，不杜撰事实\n2. 语气自然、礼貌、简洁、专业\n3. 列表化条目可用有序或无序方式提升可读性。\n5.邮件格式规范，不要markdow格式。"
+                "我的个人信息：姓名：jason hu，邮箱：hujsen@163.com，电话：13290818863，地址：宁波市海曙区xx路。公司地址：宁波市高新区123号。"
+            ),
+            '代码': (
+                "用户正在编写代码，有问题想问你，但是你不用回答，只需要将问题文本进行润色：\n -用户如果说文件名或代码行号，保留这些信息（如果用户说：demo4点py，则输出demo4.py，如果用户说：test下划线app点py，则输出test_app.py ，以此类推）。\n -保留原本语气（口语/轻松）\n -修正明显错别字与语序\n -只输出润色后的文本，不加前缀或说明。"
+    
+            )
+        }
         # 语言模式(中文/英语) + 场景(文本/聊天/邮件/代码) 默认中文, 之后尝试加载上次保存
         self.language_mode_var = tk.StringVar(value='中文')
         loaded_language = self.load_language_config()
@@ -1322,19 +1340,34 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 # 2. 根据配置构造 system 提示词（优先：场景 > 默认 > 内置）
                 system_prompt = None
                 try:
-                    prompts_cfg = getattr(self.gui_app, 'prompts', {})
+                    prompts_cfg = getattr(self.gui_app, 'prompts', {}) or {}
                     scenes_cfg = prompts_cfg.get('scenes', {}) if isinstance(prompts_cfg, dict) else {}
-                    # 场景命名兼容：可能选择 "默认" 或 "文本"
+                    user_default = prompts_cfg.get('default')
+
+                    # 1. 用户场景专属
                     if template_name in scenes_cfg and scenes_cfg.get(template_name):
                         system_prompt = scenes_cfg.get(template_name)
+                        print(f"使用用户自定义场景提示词: {template_name}")
                     else:
-                        # "文本" 场景可回退到 "默认" 或 default
-                        system_prompt = prompts_cfg.get('default') or getattr(self.gui_app, 'builtin_default_prompt', '')
-                except Exception as e:
-                    print(f"读取提示词配置异常，使用内置默认: {e}")
-                    system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
+                        # 2. 用户默认
+                        if user_default:
+                            system_prompt = user_default
+                            print(f"场景 '{template_name}' 未配置，回退到用户默认提示词")
+                        else:
+                            system_prompt = None
 
-                if not system_prompt:
+                        # 3. 内置场景（增强体验）
+                        if (not scenes_cfg.get(template_name)) and template_name in getattr(self.gui_app, 'builtin_scene_prompts', {}):
+                            # 仅当该场景没有用户自定义提示词时启用内置场景
+                            system_prompt = self.gui_app.builtin_scene_prompts.get(template_name)
+                            print(f"未找到用户 '{template_name}' 场景提示词，使用内置场景提示词")
+
+                    # 4. 最终兜底
+                    if not system_prompt:
+                        system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
+                        print("使用内置默认提示词 (所有回退均缺失)")
+                except Exception as e:
+                    print(f"读取/选择提示词异常，使用内置默认: {e}")
                     system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
 
                 # 外语模式统一附加英文输出要求

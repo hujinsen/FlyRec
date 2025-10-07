@@ -163,3 +163,69 @@ dashscope.api_key = 'your-api-key-here'
 ## 许可证
 
 本项目仅供学习和个人使用。使用阿里云 DashScope API 需要遵守相应的服务条款。
+
+## 打包部署（PyInstaller 目录模式）
+
+已提供 `FlyRecApp.spec`，可生成 `dist/FlyRecApp/` 目录用于分发。
+
+### 1. 安装依赖
+```powershell
+pip install -r requirements.txt   # 若你有生成；或
+pip install pyinstaller            # 已在 pyproject 中可直接安装
+```
+
+### 2. 生成 / 更新 spec 文件（可跳过）
+第一次也可以用命令让 PyInstaller 自动生成，再手动优化：
+```powershell
+pyinstaller -D -n FlyRecApp gui_app_fixed.py
+```
+随后使用仓库中的 `FlyRecApp.spec` 覆盖或编辑。
+
+### 3. 正式打包
+```powershell
+pyinstaller .\FlyRecApp.spec
+```
+完成后目录结构：
+```
+dist/
+	FlyRecApp/
+		FlyRecApp.exe
+		assets/ (内含 wav)
+		config.json (模板，可编辑)
+		其余依赖 DLL / *.pyz
+```
+
+### 4. 运行与测试
+```powershell
+cd dist/FlyRecApp
+./FlyRecApp.exe
+```
+
+### 5. 常见问题
+| 现象 | 说明 / 解决 |
+|------|-------------|
+| 首次启动慢 | 正常，初始化库加载与 DLL 校验。 |
+| 声音不播放 | 检查 `soundfile` 对应的 `libsndfile` DLL 是否被打包；更新声卡驱动。 |
+| 粘贴失败 | 有安全软件拦截 `pyautogui` / 剪贴板访问。 |
+| 杀毒误报 | 关闭 UPX（在 spec 中 `upx=False`）或使用目录模式（已是目录模式）| 
+
+### 6. 升级发布建议
+1. 增量更新：只替换新的 `FlyRecApp` 目录。
+2. 若想保留用户统计数据，可提示用户先备份 `voice_stats.json` 与 `transcripts.json`（当前放在运行目录）。
+3. 后续可将运行期数据迁移至 `%APPDATA%/FlyRec` 以便放入受保护目录。
+
+### 7. 可选：单文件模式（调试用）
+```powershell
+pyinstaller --onefile --add-data "assets;assets" --add-data "config.json;." gui_app_fixed.py
+```
+（单文件首次启动需解压，目录模式已足够）
+
+### 8. 资源路径提示
+若后续需要更稳定的资源定位，可在代码里封装：
+```python
+def resource_path(*parts):
+		import sys, os
+		base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+		return os.path.join(base, *parts)
+```
+然后替换 `os.path.join(base_dir, 'assets', fname)`。

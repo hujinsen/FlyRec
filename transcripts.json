@@ -1,5 +1,113 @@
 [
   {
+    "timestamp": "2025-10-07T15:56:16.527772",
+    "original": "更新这个项目所有的readme文件。",
+    "formatted": "请提供项目结构或 `README` 文件的路径信息，以及你希望更新的内容（例如：统一添加版本号、修改项目描述、增加联系方式等），以便生成准确的脚本。\n\n若你希望执行“遍历所有 README.md 文件并进行批量更新”，以下是一个通用的 Python 脚本模板：\n\n```python\nimport os\n\n# 配置要更新的内容\nnew_content = \"\"\"# My Project\nUpdated automatically.\n\nFor more info, visit the docs.\n\"\"\"\n\n# 遍历项目目录，查找所有 README.md 文件\nfor root, dirs, files in os.walk('.'):\n    for file in files:\n        if file.lower() == 'readme.md':\n            filepath = os.path.join(root, file)\n            try:\n                with open(filepath, 'w', encoding='utf-8') as f:\n                    f.write(new_content)\n                print(f\"Updated: {filepath}\")\n            except Exception as e:\n                print(f\"Error writing {filepath}: {e}\")\n\nprint(\"README update complete.\")\n```\n\n> 使用前请备份文件。运行该脚本将覆盖所有 `README.md` 内容为 `new_content`。可按需修改匹配规则（如支持 `.md` 外的格式）或合并原有内容。",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-07T15:55:44.068144",
+    "original": "我现在又切换到文本模式了，我看看这个软件到底能不能自动识别出处理一下。",
+    "formatted": "我现在又切换到文本模式了，想看看这个软件能不能自动识别并处理一下。",
+    "word_count": 33
+  },
+  {
+    "timestamp": "2025-10-07T15:55:18.889044",
+    "original": "告诉张三，让他明天早上10点过来，我们有一些事情要商量。第一是现在遇到的问题，第二是可能的解决方案，第三是。 以后该怎么办？",
+    "formatted": "张三，您好！\n\n请您明天上午10点过来一趟，我们有一些事项需要沟通和讨论。具体包括以下几点：\n\n1. 当前遇到的问题；  \n2. 可行的解决方案；  \n3. 后续的工作安排与应对策略。\n\n期待您的准时参加，谢谢！  \n\n此致  \n敬礼",
+    "word_count": 54
+  },
+  {
+    "timestamp": "2025-10-07T15:54:52.126575",
+    "original": "我在测试这个软件好不好用，看一下它的录音结果和使用场景是否能够自动的匹配。",
+    "formatted": "我在测试这个软件是否好用，想看看它的录音结果能否与使用场景自动匹配。",
+    "word_count": 35
+  },
+  {
+    "timestamp": "2025-10-07T15:54:13.112678",
+    "original": "告诉张三要他明天早上十点之前过来，可以带上我的电话和地址。",
+    "formatted": "张三，您好：\n\n请您于明天早上十点之前前来一趟。届时您可以携带我的电话和地址信息以便联系。\n\n感谢您的配合，如有问题请随时与我沟通。\n\n此致  \n敬礼",
+    "word_count": 27
+  },
+  {
+    "timestamp": "2025-10-07T15:53:56.656607",
+    "original": "告诉张三，让他明天早上十点之前过来。",
+    "formatted": "张三您好，\n\n请您于明天早上十点之前前来一趟。\n\n谢谢您的配合！\n\n此致  \n敬礼",
+    "word_count": 16
+  },
+  {
+    "timestamp": "2025-10-07T15:53:22.682378",
+    "original": "写封邮件给张三，要他明天早上十点之前过来。",
+    "formatted": "张三，您好：\n\n请您于明天早上十点之前到我这里一趟。\n\n谢谢您的配合！\n\n此致  \n敬礼",
+    "word_count": 19
+  },
+  {
+    "timestamp": "2025-10-07T15:53:12.261220",
+    "original": "写封邮件给张三，叫他明天早上十点之前过来。",
+    "formatted": "请张三明天早上十点之前过来。",
+    "word_count": 19
+  },
+  {
+    "timestamp": "2025-10-07T15:51:54.560739",
+    "original": "请张三明天早上十点之前过来。",
+    "formatted": "请张三明天早上十点之前过来。",
+    "word_count": 13
+  },
+  {
+    "timestamp": "2025-10-07T11:53:52.121168",
+    "original": "这周六周日上班吗？",
+    "formatted": "这周六和周日上班吗？",
+    "word_count": 8
+  },
+  {
+    "timestamp": "2025-10-07T11:53:45.004332",
+    "original": "你们周六周日还上班吗？",
+    "formatted": "你们周六周日还上班吗？",
+    "word_count": 10
+  },
+  {
+    "timestamp": "2025-10-07T11:53:20.477776",
+    "original": "其他人都没有上班，怎么能忙起来呢？",
+    "formatted": "别人都没上班，怎么可能忙得起来呢？",
+    "word_count": 15
+  },
+  {
+    "timestamp": "2025-10-07T11:53:04.323378",
+    "original": "嘿嘿，竟然没有那么忙。 早上倒是把我们自己忙一下。",
+    "formatted": "嘿嘿，竟然没那么忙，早上倒是把我们自己给忙了一下。",
+    "word_count": 21
+  },
+  {
+    "timestamp": "2025-10-07T11:52:47.922467",
+    "original": "哈哈哈，竟然没有很忙。早上到把我们忙一下。",
+    "formatted": "哈哈哈，竟然没那么忙。早上过来帮我们忙一下。",
+    "word_count": 18
+  },
+  {
+    "timestamp": "2025-10-07T11:51:06.421886",
+    "original": "已经安装 pyinstaller 使用目录模式帮我打包这个应用。",
+    "formatted": "使用 PyInstaller 的目录模式（即 --onedir 模式）打包已安装的应用。",
+    "word_count": 29
+  },
+  {
+    "timestamp": "2025-10-07T11:49:50.784125",
+    "original": "已经安装好pyinstaller，使用目录模式。 帮我打包这个应用。",
+    "formatted": "已经安装好 PyInstaller，使用目录模式，请帮我打包这个应用。",
+    "word_count": 30
+  },
+  {
+    "timestamp": "2025-10-07T11:45:43.048587",
+    "original": "帮我打包这个Python应用要怎么做？",
+    "formatted": "帮我打包这个Python应用，应该怎么做？",
+    "word_count": 18
+  },
+  {
+    "timestamp": "2025-10-07T11:44:31.312929",
+    "original": "我想要打包这个Python应用，要怎么做？",
+    "formatted": "我想要将这个Python应用打包，应该怎么做？",
+    "word_count": 19
+  },
+  {
     "timestamp": "2025-10-07T11:44:04.607019",
     "original": "目前是记住了输出语言，并在下次启动的时候自己加载上一次选择的输出语言。 有两个，一个是中文，一个是英文啊。",
     "formatted": "目前系统会记住用户选择的输出语言，并在下次启动时自动加载上一次选择的语言。可选语言有两种：中文和英文。",
