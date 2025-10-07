@@ -1,5 +1,29 @@
 [
   {
+    "timestamp": "2025-10-07T11:44:04.607019",
+    "original": "目前是记住了输出语言，并在下次启动的时候自己加载上一次选择的输出语言。 有两个，一个是中文，一个是英文啊。",
+    "formatted": "目前系统会记住用户选择的输出语言，并在下次启动时自动加载上一次选择的语言。可选语言有两种：中文和英文。",
+    "word_count": 47
+  },
+  {
+    "timestamp": "2025-10-07T11:43:07.041354",
+    "original": "是双击说话。",
+    "formatted": "Double-click to speak.",
+    "word_count": 5
+  },
+  {
+    "timestamp": "2025-10-07T11:42:56.675051",
+    "original": "双击啊，按住Ctrl加Space，按住说话。",
+    "formatted": "Double-click, hold Ctrl + Space, and hold to speak.",
+    "word_count": 19
+  },
+  {
+    "timestamp": "2025-10-07T11:41:34.720123",
+    "original": "我把输出语言改成了英语。",
+    "formatted": "I've changed the output language to English.",
+    "word_count": 11
+  },
+  {
     "timestamp": "2025-10-07T11:33:03.251436",
     "original": "应用启动时在后台预加载。 提示音效。",
     "formatted": "应用启动时在后台预加载，并播放提示音效。",

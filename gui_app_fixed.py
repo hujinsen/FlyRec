@@ -70,8 +70,11 @@ class VoiceRecognitionGUI:
         self.prompts = self.load_prompts_config()
         # 内置默认回退提示词（仅在缺失时使用）
         self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
-        # 语言模式(中文/外语) + 场景(文本/聊天/邮件/代码)
+        # 语言模式(中文/英语) + 场景(文本/聊天/邮件/代码) 默认中文, 之后尝试加载上次保存
         self.language_mode_var = tk.StringVar(value='中文')
+        loaded_language = self.load_language_config()
+        if loaded_language:
+            self.language_mode_var.set(loaded_language)
         self.template_scene_var = tk.StringVar(value='文本')
         # 新增: 快捷键模式变量 (hold: 按住说话, double_ctrl: 双击Ctrl开始/单击结束)
         self.hotkey_mode_var = tk.StringVar(value=loaded_mode or "hold")
@@ -372,8 +375,8 @@ class VoiceRecognitionGUI:
         # 输出语言
         lang_frame = ttk.LabelFrame(self.content_frame, text="输出语言", padding=10)
         lang_frame.pack(fill=tk.X, pady=(0,15))
-        ttk.Radiobutton(lang_frame, text='中文', value='中文', variable=self.language_mode_var).grid(row=0, column=0, padx=6, sticky=tk.W)
-        ttk.Radiobutton(lang_frame, text='英语', value='英语', variable=self.language_mode_var).grid(row=0, column=1, padx=6, sticky=tk.W)
+        ttk.Radiobutton(lang_frame, text='中文', value='中文', variable=self.language_mode_var, command=self.on_language_change).grid(row=0, column=0, padx=6, sticky=tk.W)
+        ttk.Radiobutton(lang_frame, text='英语', value='英语', variable=self.language_mode_var, command=self.on_language_change).grid(row=0, column=1, padx=6, sticky=tk.W)
         ttk.Label(lang_frame, text='中文模式输出中文，英语模式输出英语。', foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(4,0))
 
         # 场景选择
@@ -615,6 +618,38 @@ class VoiceRecognitionGUI:
         except Exception as e:
             print(f"读取快捷键配置失败: {e}")
         return None, None
+
+    # ================== 输出语言持久化相关 ==================
+    def load_language_config(self):
+        """读取上次保存的输出语言 (中文 / 英语)。不存在则返回 None"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f) or {}
+                lang = cfg.get('output_language') or cfg.get('language_mode')  # 兼容备选key
+                if lang in ('中文', '英语'):
+                    return lang
+        except Exception as e:
+            print(f"读取语言配置失败: {e}")
+        return None
+
+    def save_language_config(self):
+        """保存当前输出语言到 config.json，与原配置字段合并"""
+        try:
+            data = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f) or {}
+            data['output_language'] = self.language_mode_var.get()
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"已保存输出语言: {data['output_language']}")
+        except Exception as e:
+            print(f"保存语言配置失败: {e}")
+
+    def on_language_change(self):
+        """语言单选按钮回调: 保存配置"""
+        self.save_language_config()
 
     def load_prompts_config(self):
         """加载提示词配置结构
@@ -1303,8 +1338,8 @@ class CustomRecognizer(HoldToTalkRecognizer):
                     system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
 
                 # 外语模式统一附加英文输出要求
-                if lang_mode == '外语':
-                    # 简单策略：在 system 提示词后追加英文指令
+                # 英语模式统一附加英文输出要求 (兼容旧值 '外语')
+                if lang_mode in ('英语', '外语', '英文', 'English'):
                     system_prompt = system_prompt.strip() + "\nPlease respond in clear, concise, natural English, refining the user's intent accordingly."
 
                 # 3. 组装 messages
