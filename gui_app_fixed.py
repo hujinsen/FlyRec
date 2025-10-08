@@ -57,8 +57,8 @@ class VoiceRecognitionGUI:
         self.stats_file = "voice_stats.json"
         self.transcripts_file = "transcripts.json"
         self.load_data()
-        
-        # 语音识别器
+
+        # 语音识别器与快捷键初始化
         self.recognizer = None
         self.is_recording = False
         self.current_hotkey = "ctrl+space"
@@ -69,11 +69,8 @@ class VoiceRecognitionGUI:
             self.current_hotkey = loaded_hotkey
         # 加载提示词配置（中文默认 + 场景提示词）
         self.prompts = self.load_prompts_config()
-        # 内置默认回退提示词（仅在缺失时使用）
+        # 内置默认与场景提示词
         self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
-        # 内置场景级提示词（当某场景未单独配置时可作为增强型回退）
-        # 优先级：用户场景提示词 > 用户默认中文提示词 > 内置场景提示词 > 内置默认提示词
-        # （之前逻辑：用户场景 > 用户默认 > 内置默认；现在插入内置场景层级，提升“邮件”等体验）
         self.builtin_scene_prompts = {
             '聊天': (
                 "用户正在用聊天应用，根据用户口述输出自然、简洁、友好的聊天文本：\n"
@@ -309,24 +306,18 @@ class VoiceRecognitionGUI:
             
             self.stats_cards[key] = value_label
         
-        # 快捷操作
-        actions_frame = ttk.LabelFrame(self.content_frame, text="快捷操作", padding=10)
-        actions_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        ttk.Button(actions_frame, text="开始录音测试", 
-                  command=self.test_recording).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions_frame, text="清空统计", 
-                  command=self.clear_stats).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions_frame, text="导出数据", 
-                  command=self.export_data).pack(side=tk.LEFT, padx=5)
-        
-        # 最近转录
+        # 最近转录区（包含操作按钮）
         recent_frame = ttk.LabelFrame(self.content_frame, text="最近转录", padding=10)
         recent_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.recent_text = scrolledtext.ScrolledText(recent_frame, height=10, wrap=tk.WORD)
+
+        self.recent_text = scrolledtext.ScrolledText(recent_frame, height=12, wrap=tk.WORD)
         self.recent_text.pack(fill=tk.BOTH, expand=True)
-        
+
+        ops_frame = ttk.Frame(recent_frame)
+        ops_frame.pack(fill=tk.X, pady=(8,0))
+        ttk.Button(ops_frame, text="清空统计", command=self.clear_stats).pack(side=tk.LEFT, padx=(0,6))
+        ttk.Button(ops_frame, text="导出数据", command=self.export_data).pack(side=tk.LEFT)
+
         # 显示最近的转录
         self.update_recent_transcripts()
     
@@ -367,6 +358,131 @@ class VoiceRecognitionGUI:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         self.update_transcripts_display()
+
+        # 绑定双击与右键菜单
+        self.transcript_tree.bind('<Double-1>', self.open_transcript_detail_event)
+        self.transcript_tree.bind('<Button-3>', self.open_transcript_detail_event)  # 右键
+
+        # 右键菜单（可扩展）
+        self._transcript_menu = tk.Menu(self.transcript_tree, tearoff=0)
+        self._transcript_menu.add_command(label="查看详情", command=self.open_selected_transcript_detail)
+        # 可加入复制等功能
+
+    def open_transcript_detail_event(self, event):
+        """事件触发：双击或右键显示详情。右键先选中行。"""
+        try:
+            region = self.transcript_tree.identify('region', event.x, event.y)
+            if region == 'cell' or event.num == 3:
+                item_id = self.transcript_tree.identify_row(event.y)
+                if item_id:
+                    # 右键需要设置选中
+                    if event.num == 3:
+                        self.transcript_tree.selection_set(item_id)
+                        try:
+                            self._transcript_menu.tk_popup(event.x_root, event.y_root)
+                        finally:
+                            self._transcript_menu.grab_release()
+                    else:
+                        self.open_transcript_detail(item_id)
+        except Exception as e:
+            print(f"打开详情事件失败: {e}")
+
+    def open_selected_transcript_detail(self):
+        sel = self.transcript_tree.selection()
+        if sel:
+            self.open_transcript_detail(sel[0])
+
+    def open_transcript_detail(self, item_id):
+        """根据 tree item id 打开详情窗口"""
+        try:
+            values = self.transcript_tree.item(item_id, 'values')
+            if not values or len(values) < 4:
+                return
+            # 根据显示顺序找到对应 transcript 原始对象（简单匹配时间+word_count+截断文本）
+            time_str, original_short, formatted_short, wc = values
+            matched = None
+            for t in self.transcripts:
+                try:
+                    ts_fmt = datetime.fromisoformat(t['timestamp']).strftime('%m-%d %H:%M')
+                except Exception:
+                    continue
+                if ts_fmt == time_str and str(t.get('word_count')) == str(wc):
+                    # 进一步粗略核对开头
+                    if t['original'].startswith(original_short[:10]) or original_short.replace('...', '') in t['original']:
+                        matched = t
+                        break
+            if not matched:
+                print("未找到匹配的转录记录")
+                return
+
+            win = tk.Toplevel(self.root)
+            win.title(f"转录详情 - {time_str}")
+            win.geometry("900x520")
+            win.transient(self.root)
+            win.grab_set()
+
+            # 使用 grid 保证底部按钮可见
+            win.grid_rowconfigure(1, weight=1)
+            win.grid_columnconfigure(0, weight=1)
+
+            # 支持 ESC 关闭
+            win.bind('<Escape>', lambda e: win.destroy())
+
+            # 上方信息栏
+            info_bar = ttk.Frame(win)
+            info_bar.grid(row=0, column=0, sticky='ew', padx=10, pady=(8,4))
+            ttk.Label(info_bar, text=f"时间: {time_str}  词数: {matched.get('word_count', '')}").pack(side=tk.LEFT)
+
+            # 主体区域（左右文本）
+            body = ttk.Frame(win)
+            body.grid(row=1, column=0, sticky='nsew', padx=8, pady=4)
+            body.grid_rowconfigure(0, weight=1)
+            body.grid_columnconfigure(0, weight=1)
+            body.grid_columnconfigure(1, weight=1)
+
+            # 左列
+            left_col = ttk.Frame(body)
+            left_col.grid(row=0, column=0, sticky='nsew', padx=(0,4))
+            ttk.Label(left_col, text="原始文本", font=('Arial', 11, 'bold')).pack(anchor=tk.W)
+            orig_txt = scrolledtext.ScrolledText(left_col, wrap=tk.WORD, font=('Consolas', 11))
+            orig_txt.pack(fill=tk.BOTH, expand=True)
+            orig_txt.insert(tk.END, matched['original'])
+            orig_txt.config(state='disabled')
+
+            # 右列
+            right_col = ttk.Frame(body)
+            right_col.grid(row=0, column=1, sticky='nsew', padx=(4,0))
+            ttk.Label(right_col, text="处理后文本", font=('Arial', 11, 'bold')).pack(anchor=tk.W)
+            fmt_txt = scrolledtext.ScrolledText(right_col, wrap=tk.WORD, font=('Consolas', 11))
+            fmt_txt.pack(fill=tk.BOTH, expand=True)
+            fmt_txt.insert(tk.END, matched['formatted'])
+            fmt_txt.config(state='disabled')
+
+            # 底部操作按钮
+            btn_bar = ttk.Frame(win)
+            btn_bar.grid(row=2, column=0, sticky='ew', padx=10, pady=(4,10))
+            btn_bar.grid_columnconfigure(0, weight=1)
+
+            def copy_original():
+                try:
+                    import pyperclip
+                    pyperclip.copy(matched['original'])
+                except Exception as ce:
+                    messagebox.showerror("复制失败", str(ce))
+
+            def copy_formatted():
+                try:
+                    import pyperclip
+                    pyperclip.copy(matched['formatted'])
+                except Exception as ce:
+                    messagebox.showerror("复制失败", str(ce))
+
+            ttk.Button(btn_bar, text="复制原始", command=copy_original).pack(side=tk.LEFT)
+            ttk.Button(btn_bar, text="复制处理后", command=copy_formatted).pack(side=tk.LEFT, padx=(6,0))
+            ttk.Button(btn_bar, text="关闭(Esc)", command=win.destroy).pack(side=tk.RIGHT)
+
+        except Exception as e:
+            print(f"打开详情窗口失败: {e}")
     
     def show_settings(self):
         """显示设置页面"""
@@ -398,39 +514,21 @@ class VoiceRecognitionGUI:
         ttk.Radiobutton(lang_frame, text='英语', value='英语', variable=self.language_mode_var, command=self.on_language_change).grid(row=0, column=1, padx=6, sticky=tk.W)
         ttk.Label(lang_frame, text='中文模式输出中文，英语模式输出英语。', foreground='gray').grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(4,0))
 
-        # 场景选择
+        # 场景选择 + 智能切换
         scene_frame = ttk.LabelFrame(self.content_frame, text="场景 (影响语义风格)", padding=10)
         scene_frame.pack(fill=tk.X, pady=(0,15))
         for i, scene in enumerate(["文本", "聊天", "邮件", "代码"]):
             ttk.Radiobutton(scene_frame, text=scene, value=scene, variable=self.template_scene_var).grid(row=0, column=i, padx=8, sticky=tk.W)
+        # 智能场景切换（从“其他设置”移动至此）
+        ttk.Checkbutton(scene_frame, text="智能场景切换（自动选择场景）", variable=self.smart_template_var).grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(6,0))
 
-        # 提示词编辑
-        prompt_frame = ttk.LabelFrame(self.content_frame, text="提示词配置（优先级：场景 > 中文默认；外语模式自动英文）", padding=10)
-        prompt_frame.pack(fill=tk.BOTH, expand=True)
-        nb = ttk.Notebook(prompt_frame)
-        nb.pack(fill=tk.BOTH, expand=True)
-        self.prompt_text_widgets = {}
-
-        def add_tab(key: str, title: str):
-            tab = ttk.Frame(nb)
-            nb.add(tab, text=title)
-            tip = ("场景专属：留空回退到中文默认" if key != 'default' else "中文默认：所有场景(中文模式)回退使用")
-            ttk.Label(tab, text=tip, foreground='gray').pack(anchor=tk.W, pady=(0,4))
-            txt = scrolledtext.ScrolledText(tab, height=6, wrap=tk.WORD)
-            txt.pack(fill=tk.BOTH, expand=True)
-            if key == 'default':
-                txt.insert(tk.END, self.prompts.get('default') or self.builtin_default_prompt)
-            else:
-                val = self.prompts.get('scenes', {}).get(title)
-                if val:
-                    txt.insert(tk.END, val)
-            self.prompt_text_widgets[key] = txt
-
-        add_tab('default', '中文')
-        for scene in ["文本", "聊天", "邮件", "代码"]:
-            add_tab(scene, scene)
-
-        ttk.Button(prompt_frame, text="保存提示词", command=self.save_prompts_from_ui).pack(anchor=tk.E, pady=(6,0))
+        # 提示词配置（精简版，仅保留预留按钮，当前使用内置/配置默认逻辑）
+        prompt_frame = ttk.LabelFrame(self.content_frame, text="提示词配置", padding=10)
+        prompt_frame.pack(fill=tk.X, expand=False)
+        ttk.Label(prompt_frame, text="当前版本使用内置/已加载的默认提示词；自定义多场景编辑稍后提供。", foreground='gray').pack(anchor=tk.W)
+        def _placeholder_edit():
+            messagebox.showinfo("提示", "自定义提示词编辑功能将在后续版本开放。当前使用已有默认逻辑。")
+        ttk.Button(prompt_frame, text="提示词配置（预留）", command=_placeholder_edit).pack(anchor=tk.W, pady=(6,0))
 
         # 其他设置
         other = ttk.LabelFrame(self.content_frame, text="其他设置", padding=10)
@@ -439,31 +537,12 @@ class VoiceRecognitionGUI:
         ttk.Checkbutton(other, text="自动粘贴识别结果", variable=self.auto_paste_var).pack(anchor=tk.W)
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(other, text="最小化到系统托盘", variable=self.minimize_to_tray_var).pack(anchor=tk.W)
-        self.smart_template_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(other, text="智能模板切换（自动选择场景）", variable=self.smart_template_var).pack(anchor=tk.W)
+    # 已移动：智能场景切换复选框在上方场景区域
 
     def save_prompts_from_ui(self):
         """从界面采集并保存提示词配置"""
-        try:
-            # 汇总 default 与 scenes
-            default_widget = self.prompt_text_widgets.get('default')
-            default_content = default_widget.get(1.0, tk.END).strip() if default_widget else ''
-            scenes = {}
-            for scene in ["文本", "聊天", "邮件", "代码"]:
-                widget_key = scene
-                widget = self.prompt_text_widgets.get(widget_key)
-                if widget:
-                    content = widget.get(1.0, tk.END).strip()
-                    if content:
-                        scenes[scene] = content
-            # 更新内存结构
-            self.prompts['default'] = default_content or self.builtin_default_prompt
-            self.prompts['scenes'] = scenes
-            # 保存
-            self.save_prompts_config()
-            messagebox.showinfo("成功", "提示词配置已保存")
-        except Exception as e:
-            messagebox.showerror("错误", f"保存提示词失败: {e}")
+        # 精简版：当前无多文本编辑控件，保留占位函数避免旧调用报错
+        messagebox.showinfo("提示", "当前版本未开放自定义多场景提示词编辑。使用内置默认配置。")
     
     def show_help(self):
         """显示帮助页面"""
@@ -1182,8 +1261,24 @@ class VoiceRecognitionGUI:
     
     def update_timer(self):
         """定时更新"""
-        # 这里可以添加定时更新的逻辑
-        self.root.after(1000, self.update_timer)
+        try:
+            # 智能场景切换：若开启则根据当前前台窗口自动勾选场景单选按钮
+            if getattr(self, 'smart_template_var', None) and self.smart_template_var.get():
+                scene = None
+                try:
+                    scene = self.get_smart_template()
+                except Exception as _e:
+                    scene = None
+                # 若检测出的场景与当前显示不同，则更新UI变量（不改变语言）
+                if scene and scene != self.template_scene_var.get():
+                    # 仅在设置页面存在单选按钮时更新，避免用户在其它页面时频繁切换造成潜在困惑
+                    # 这里简单判断 settings 页是否存在：检查某个独有控件，如 hotkey_var 是否存在
+                    if hasattr(self, 'hotkey_var'):
+                        self.template_scene_var.set(scene)
+            # 你还可以在这里扩展更多周期性任务
+        finally:
+            # 继续下一次调度
+            self.root.after(1000, self.update_timer)
     
     def run(self):
         """运行应用"""

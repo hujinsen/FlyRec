@@ -1,5 +1,101 @@
 [
   {
+    "timestamp": "2025-10-08T15:33:49.660272",
+    "original": "增加查看识别记录详情的功能。",
+    "formatted": "增加查看识别记录详情的功能。",
+    "word_count": 13
+  },
+  {
+    "timestamp": "2025-10-08T15:31:16.231223",
+    "original": "弹出窗口的底部按钮没有显示出来。",
+    "formatted": "弹出窗口底部的按钮没显示出来。",
+    "word_count": 15
+  },
+  {
+    "timestamp": "2025-10-08T15:08:10.254076",
+    "original": "弹出窗口。 的格式不对。",
+    "formatted": "弹出窗口的格式不对。",
+    "word_count": 9
+  },
+  {
+    "timestamp": "2025-10-08T15:05:06.337012",
+    "original": "识别记录，这里双击或鼠标右键某一条识别记录能够弹出一个新的窗口，左边显示原始的文字，右边显示。 经过大模型处理之后的文字。",
+    "formatted": "识别记录这里，双击或鼠标右键某一条记录可以弹出一个新窗口，左边显示原始文字，右边显示经过大模型处理后的文字。",
+    "word_count": 55
+  },
+  {
+    "timestamp": "2025-10-08T14:49:10.135755",
+    "original": "Ctrl加录音，Ctrl加out. ",
+    "formatted": "Ctrl加录音，Ctrl加out。",
+    "word_count": 15
+  },
+  {
+    "timestamp": "2025-10-08T14:46:06.913402",
+    "original": "勾选智能切换场景之后。 当光标焦点集中在文本上面时，则文本自动选中。 当光标焦点在聊天页面上时，则自动选中聊天项。 以此类推。",
+    "formatted": "勾选智能切换场景后，当光标焦点在文本上时，文本自动被选中；当光标焦点在聊天页面时，自动选中聊天项，以此类推。",
+    "word_count": 54
+  },
+  {
+    "timestamp": "2025-10-08T14:42:55.724527",
+    "original": "智能模板切换改成自动智能场景切换。 然后把这个设置放在场景那一块。",
+    "formatted": "把“智能模板切换”改成“自动智能场景切换”，然后把这个设置项放到场景那一块去。",
+    "word_count": 30
+  },
+  {
+    "timestamp": "2025-10-08T14:42:15.545331",
+    "original": "将智能模板切换放到场景里面。 当自动选择文本或聊天等场景的时候。 不对。 还没有取消啊。",
+    "formatted": "将智能模板的切换功能集成到场景中，当自动选择文本、聊天等场景时，仍然没有取消（相关操作或状态）。",
+    "word_count": 37
+  },
+  {
+    "timestamp": "2025-10-08T14:35:59.267735",
+    "original": "只保留一个提示词配置按钮，待后期。 优化。",
+    "formatted": "先只保留一个提示词配置按钮，后期再优化。",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-08T14:35:43.584018",
+    "original": "将将提示词配置这里面删掉。 因为代码里采用了默认的提示词。",
+    "formatted": "把提示词配置这里删掉，因为代码里已经用了默认的提示词。",
+    "word_count": 26
+  },
+  {
+    "timestamp": "2025-10-08T14:34:30.834516",
+    "original": "现在处于聊天端口。",
+    "formatted": "现在处于聊天端口。",
+    "word_count": 8
+  },
+  {
+    "timestamp": "2025-10-08T14:33:55.462314",
+    "original": "现在用户处在文本模式。",
+    "formatted": "用户当前处于文本模式，意味着用户正在通过文字进行输入和交流。我将根据用户的口述内容，准确理解其真实意图，并在尽量不更改原文的基础上，输出符合用户本意的文本。请继续提供需要处理的内容。",
+    "word_count": 10
+  },
+  {
+    "timestamp": "2025-10-08T14:31:48.915177",
+    "original": "现在切换到英文模式了。",
+    "formatted": "Now switching to English mode.",
+    "word_count": 10
+  },
+  {
+    "timestamp": "2025-10-08T14:31:36.265115",
+    "original": "现在切换到文本模式啦。",
+    "formatted": "现在切换到文本模式了。",
+    "word_count": 10
+  },
+  {
+    "timestamp": "2025-10-08T11:34:18.410607",
+    "original": "调整英文模式提示词设置。",
+    "formatted": "调整英文模式的提示词设置。",
+    "word_count": 11
+  },
+  {
+    "timestamp": "2025-10-08T11:33:55.586861",
+    "original": "调整英文模式提示词。 提示词全部都用英文表示。",
+    "formatted": "Adjust the English mode prompt. All prompts should be in English.",
+    "word_count": 20
+  },
+  {
     "timestamp": "2025-10-08T11:05:34.239500",
     "original": "发个邮件给张三，要他明天早上10点之前过来。明天指的是10月9号。",
     "formatted": "Dear Zhang San,\n\nPlease come by before 10:00 a.m. on Wednesday, October 9. Let me know if you have any questions.\n\nBest regards,  \nJason Hu  \nhujsen@163.com  \n13290818863  \nNo. xx Road, Haishu District, Ningbo  \nNingbo High-tech Zone, No. 123",
@@ -68,7 +164,7 @@
   {
     "timestamp": "2025-10-07T15:53:12.261220",
     "original": "写封邮件给张三，叫他明天早上十点之前过来。",
-    "formatted": "请张三明天早上十点之前过来。",
+    "formatted": "请发邮件给张三，让他明天早上十点之前过来。",
     "word_count": 19
   },
   {
@@ -98,7 +194,7 @@
   {
     "timestamp": "2025-10-07T11:53:04.323378",
     "original": "嘿嘿，竟然没有那么忙。 早上倒是把我们自己忙一下。",
-    "formatted": "嘿嘿，竟然没那么忙，早上倒是把我们自己给忙了一下。",
+    "formatted": "嘿嘿，没想到没那么忙。早上倒是先把我们自己手头的事情处理一下。",
     "word_count": 21
   },
   {
