@@ -61,6 +61,7 @@ class VoiceRecognitionGUI:
         # 语音识别器与快捷键初始化
         self.recognizer = None
         self.is_recording = False
+        #double_ctrl   ctrl+space
         self.current_hotkey = "ctrl+space"
         # 从配置文件加载快捷键及模式
         self.config_file = "config.json"
@@ -79,7 +80,7 @@ class VoiceRecognitionGUI:
             '邮件': (
                 "用户正在写邮件，请将用户口述整理 / 润色成一封正式、礼貌、结构清晰的邮件：\n"
                 "要求：\n1. 保留关键信息与时间节点，不杜撰事实\n2. 语气自然、礼貌、简洁、专业\n3. 列表化条目可用有序或无序方式提升可读性。\n5.邮件格式规范，不要markdow格式。"
-                "我的个人信息：姓名：jason hu，邮箱：hujsen@163.com，电话：13290818863，地址：宁波市海曙区xx路。公司地址：宁波市高新区123号。"
+                "我的个人信息：姓名：Jason Hu，邮箱：hujsen@163.com，电话：13290818863，地址：宁波市海曙区123号。"
             ),
             '代码': (
                 "用户正在编写代码，有问题想问你，但是你不用回答，只需要将问题文本进行润色：\n -用户如果说文件名或代码行号，保留这些信息（如果用户说：demo4点py，则输出demo4.py，如果用户说：test下划线app点py，则输出test_app.py ，以此类推）。\n -保留原本语气（口语/轻松）\n -修正明显错别字与语序\n -只输出润色后的文本，不加前缀或说明。"
@@ -230,29 +231,37 @@ class VoiceRecognitionGUI:
         title_label = ttk.Label(sidebar, text="独白", font=('Arial', 16, 'bold'))
         title_label.pack(pady=(0, 20))
         
-        # 导航按钮
-        nav_buttons = [
+        # 顶部主功能按钮（保持原顺序的前三个）
+        top_buttons = [
             ("📊 仪表板", self.show_dashboard),
-            ("🎤 识别记录", self.show_transcripts),
-            ("📝 词典", self.show_user_dictionary),
-            ("⚙️ 设置", self.show_settings),
-            ("❓ 帮助", self.show_help)
+            ("🎤 转录记录", self.show_transcripts),
+            ("📝 词典", self.show_user_dictionary)
         ]
-        
         self.nav_buttons = {}
-        for text, command in nav_buttons:
+        for text, command in top_buttons:
             btn = ttk.Button(sidebar, text=text, command=command, width=20)
             btn.pack(pady=2, fill=tk.X)
             self.nav_buttons[text] = btn
+
+        # 底部设置与帮助
+        bottom_frame = ttk.Frame(sidebar)
+        bottom_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10,0))
         
-        # 状态指示
-        ttk.Separator(sidebar, orient='horizontal').pack(fill=tk.X, pady=10)
-        
-        self.status_label = ttk.Label(sidebar, text="状态: 待机", foreground='green')
+        # ttk.Separator(bottom_frame, orient='horizontal').pack(fill=tk.X, pady=(0,10))
+        self.status_label = ttk.Label(bottom_frame, text="状态: 待机", foreground='green')
         self.status_label.pack()
         
-        self.hotkey_label = ttk.Label(sidebar, text=f"快捷键: {self.current_hotkey}")
+        self.hotkey_label = ttk.Label(bottom_frame, text=f"快捷键: {self.current_hotkey}")
         self.hotkey_label.pack(pady=(5, 0))
+        
+        ttk.Separator(bottom_frame, orient='horizontal').pack(fill=tk.X, pady=(0,6))
+        settings_btn = ttk.Button(bottom_frame, text="⚙️ 设置", command=self.show_settings, width=20)
+        settings_btn.pack(pady=2, fill=tk.X)
+        help_btn = ttk.Button(bottom_frame, text="❓ 帮助", command=self.show_help, width=20)
+        help_btn.pack(pady=2, fill=tk.X)
+        # 记录引用
+        self.nav_buttons["⚙️ 设置"] = settings_btn
+        self.nav_buttons["❓ 帮助"] = help_btn
     
     def show_user_dictionary(self):
         """用户词典配置界面: 原词 -> 目标词语 (替换/标准化)"""
@@ -450,10 +459,10 @@ class VoiceRecognitionGUI:
         self.update_recent_transcripts()
     
     def show_transcripts(self):
-        """显示识别记录"""
+        """显示转录记录"""
         self.clear_content()
         
-        title = ttk.Label(self.content_frame, text="识别记录", font=('Arial', 18, 'bold'))
+        title = ttk.Label(self.content_frame, text="转录记录", font=('Arial', 18, 'bold'))
         title.pack(anchor=tk.W, pady=(0, 20))
         
         # 搜索框
@@ -629,7 +638,7 @@ class VoiceRecognitionGUI:
         ttk.Label(hotkey_frame, text="提示: ctrl+space 格式 (仅按住模式有效)", foreground='gray').grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(5,0))
 
         # 快捷键模式
-        mode_frame = ttk.LabelFrame(self.content_frame, text="快捷键模式", padding=10)
+        mode_frame = ttk.LabelFrame(self.content_frame, text="快捷键", padding=10)
         mode_frame.pack(fill=tk.X, pady=(0,15))
         ttk.Radiobutton(mode_frame, text="按住说话 (Ctrl+Space)", value='hold', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=0, sticky=tk.W, padx=(0,12))
         ttk.Radiobutton(mode_frame, text="双击Ctrl开始/单击结束", value='double_ctrl', variable=self.hotkey_mode_var, command=self.on_hotkey_mode_change).grid(row=0, column=1, sticky=tk.W)
@@ -819,7 +828,7 @@ class VoiceRecognitionGUI:
         # 更新侧边栏显示
         try:
             if mode == 'double_ctrl':
-                self.hotkey_label.config(text="快捷键模式: 双击Ctrl")
+                self.hotkey_label.config(text="快捷键: 双击Ctrl")
             else:
                 self.hotkey_label.config(text=f"快捷键: {self.current_hotkey}")
         except Exception:
