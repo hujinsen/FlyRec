@@ -255,13 +255,141 @@ class VoiceRecognitionGUI:
         self.hotkey_label.pack(pady=(5, 0))
     
     def show_user_dictionary(self):
-        """配置用户词典"""
+        """用户词典配置界面: 原词 -> 目标词语 (替换/标准化)"""
         self.clear_content()
-        title = ttk.Label(self.content_frame, text="用户词典配置", font=('Arial', 18, 'bold'))
-        title.pack(anchor=tk.W, pady=(0, 20))
-        
-       
-        
+
+        # 初始化内存结构
+        if not hasattr(self, 'user_dict'):
+            self.user_dict_file = 'user_dictionary.json'
+            self.user_dict = self._load_user_dictionary()
+
+        ttk.Label(self.content_frame, text="用户词典配置", font=('Arial', 18, 'bold')).pack(anchor=tk.W, pady=(0, 18))
+
+        form_frame = ttk.Frame(self.content_frame)
+        form_frame.pack(fill=tk.X, padx=10, pady=(0,10))
+
+        ttk.Label(form_frame, text="原词").grid(row=0, column=0, sticky=tk.W)
+        self.ud_src_var = tk.StringVar()
+        src_entry = ttk.Entry(form_frame, textvariable=self.ud_src_var, width=22)
+        src_entry.grid(row=0, column=1, padx=(6,20), sticky=tk.W)
+
+        ttk.Label(form_frame, text="替换为").grid(row=0, column=2, sticky=tk.W)
+        self.ud_dst_var = tk.StringVar()
+        dst_entry = ttk.Entry(form_frame, textvariable=self.ud_dst_var, width=30)
+        dst_entry.grid(row=0, column=3, padx=(6,20), sticky=tk.W)
+
+        def add_or_update():
+            src = self.ud_src_var.get().strip()
+            dst = self.ud_dst_var.get().strip()
+            if not src or not dst:
+                messagebox.showwarning("提示", "原词与替换内容均不能为空")
+                return
+            existed = src in self.user_dict
+            self.user_dict[src] = dst
+            self._save_user_dictionary()
+            self._refresh_user_dict_view()
+            if existed:
+                msg = f"已更新条目: {src} -> {dst}"
+            else:
+                msg = f"已新增条目: {src} -> {dst}"
+            print(msg)
+            self.ud_src_var.set("")
+            self.ud_dst_var.set("")
+            src_entry.focus_set()
+
+        ttk.Button(form_frame, text="新增 / 更新", command=add_or_update).grid(row=0, column=4, sticky=tk.W)
+
+        # 列表区域
+        list_frame = ttk.Frame(self.content_frame, relief=tk.GROOVE, borderwidth=1)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=(10,10))
+        ttk.Label(list_frame, text="用户字典", foreground='gray').pack(anchor=tk.W, padx=6, pady=(4,2))
+
+        # Treeview
+        columns = ("原词", "目标词语")
+        self.user_dict_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=12)
+        for col in columns:
+            self.user_dict_tree.heading(col, text=col)
+            self.user_dict_tree.column(col, width=180 if col=="原词" else 320, anchor=tk.W)
+        self.user_dict_tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0,6))
+
+        # 右键菜单
+        menu = tk.Menu(self.user_dict_tree, tearoff=0)
+        menu.add_command(label="删除", command=lambda: self._delete_selected_user_dict())
+        menu.add_command(label="编辑到输入框", command=lambda: self._load_selected_into_form())
+        self.user_dict_tree.bind('<Button-3>', lambda e: self._popup_user_dict_menu(e, menu))
+        self.user_dict_tree.bind('<Double-1>', lambda e: self._load_selected_into_form())
+
+        self._refresh_user_dict_view()
+
+    # ================= 用户词典内部逻辑 =================
+    def _load_user_dictionary(self):
+        try:
+            if os.path.exists(getattr(self, 'user_dict_file', 'user_dictionary.json')):
+                with open(self.user_dict_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception as e:
+            print(f"读取用户词典失败: {e}")
+        return {}
+
+    def _save_user_dictionary(self):
+        try:
+            with open(self.user_dict_file, 'w', encoding='utf-8') as f:
+                json.dump(self.user_dict, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存用户词典失败: {e}")
+
+    def _refresh_user_dict_view(self):
+        if not hasattr(self, 'user_dict_tree'):
+            return
+        for item in self.user_dict_tree.get_children():
+            self.user_dict_tree.delete(item)
+        # 排序展示
+        for src, dst in sorted(self.user_dict.items(), key=lambda x: x[0].lower()):
+            self.user_dict_tree.insert('', 'end', values=(src, dst))
+
+    def _delete_selected_user_dict(self):
+        if not hasattr(self, 'user_dict_tree'):
+            return
+        sel = self.user_dict_tree.selection()
+        if not sel:
+            return
+        if not messagebox.askyesno("确认", "确定删除所选条目？"):
+            return
+        removed = 0
+        for iid in sel:
+            vals = self.user_dict_tree.item(iid, 'values')
+            if vals and vals[0] in self.user_dict:
+                self.user_dict.pop(vals[0], None)
+                removed += 1
+        if removed:
+            self._save_user_dictionary()
+            self._refresh_user_dict_view()
+            print(f"已删除 {removed} 条词典记录")
+
+    def _load_selected_into_form(self):
+        if not hasattr(self, 'user_dict_tree'):
+            return
+        sel = self.user_dict_tree.selection()
+        if not sel:
+            return
+        vals = self.user_dict_tree.item(sel[0], 'values')
+        if not vals:
+            return
+        self.ud_src_var.set(vals[0])
+        self.ud_dst_var.set(vals[1])
+
+    def _popup_user_dict_menu(self, event, menu):
+        iid = self.user_dict_tree.identify_row(event.y)
+        if iid:
+            self.user_dict_tree.selection_set(iid)
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
+    # 导入/导出功能已移除（保留占位便于未来扩展）
       
     def create_content_area(self, parent):
         """创建右侧内容区域"""

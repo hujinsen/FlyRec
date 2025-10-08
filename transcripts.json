@@ -1,5 +1,35 @@
 [
   {
+    "timestamp": "2025-10-08T15:46:33.645955",
+    "original": "完成词典界面。",
+    "formatted": "完成词典界面。",
+    "word_count": 6
+  },
+  {
+    "timestamp": "2025-10-08T15:46:27.509097",
+    "original": "完成字典界面。",
+    "formatted": "完成字典界面。",
+    "word_count": 6
+  },
+  {
+    "timestamp": "2025-10-08T15:46:20.117244",
+    "original": "完成字典界面。",
+    "formatted": "完成字典界面。",
+    "word_count": 6
+  },
+  {
+    "timestamp": "2025-10-08T15:43:59.303587",
+    "original": "将这四个按钮的功能删掉。",
+    "formatted": "把这四个按钮的功能删掉。",
+    "word_count": 11
+  },
+  {
+    "timestamp": "2025-10-08T15:39:41.822847",
+    "original": "字典功能做成这种样式。",
+    "formatted": "把字典功能做成这种样式。",
+    "word_count": 10
+  },
+  {
     "timestamp": "2025-10-08T15:33:49.660272",
     "original": "增加查看识别记录详情的功能。",
     "formatted": "增加查看识别记录详情的功能。",
