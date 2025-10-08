@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw
 from demo4 import HoldToTalkRecognizer
 import keyboard
 import sys
+import re  # 新增: 用于检测输出中是否含有中文字符
 
 import psutil
 try:
@@ -1373,8 +1374,18 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 # 外语模式统一附加英文输出要求
                 # 英语模式统一附加英文输出要求 (兼容旧值 '外语')
                 if lang_mode in ('英语', '外语', '英文', 'English'):
-                    system_prompt = system_prompt.strip() + "\nPlease respond in clear, concise, natural English, refining the user's intent accordingly."
-
+                    # 英语模式: 强制输出纯英文（翻译+润色）
+                    english_enforcer = (
+                        "IMPORTANT: You must output ONLY English text.\n"
+                        "Task: Understand the user's spoken intent (may be Chinese) and produce a concise, natural English sentence or short paragraph conveying exactly the same meaning.\n"
+                        "Rules:\n"
+                        "1. Do NOT include ANY Chinese characters.\n"
+                        "2. Preserve key factual details (names, numbers, times).\n"
+                        "3. Do NOT add explanations, apologies, or meta commentary.\n"
+                        "4. If the input is already English, just lightly polish it.\n"
+                        "5. Output only the final English text, no labels or prefixes."
+                    )
+                    system_prompt = system_prompt.strip() + "\n" + english_enforcer
                 # 3. 组装 messages
                 messages = [
                     {"role": "system", "content": system_prompt},
@@ -1387,6 +1398,28 @@ class CustomRecognizer(HoldToTalkRecognizer):
                     formatted = self._format_text.generate(messages)
                     if formatted:
                         formatted_content = formatted.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
+                        # 若是英语模式，检查是否仍含有中文字符，若有则重试一次
+                        if lang_mode in ('英语', '外语', '英文', 'English') and re.search(r'[\u4e00-\u9fff]', formatted_content):
+                            print("检测到输出包含中文，执行英文回退重试...")
+                            retry_system = (
+                                "You previously returned non-English content. Now STRICTLY output ONLY English. "
+                                "Translate and refine the user's intent. No Chinese characters. No explanations."
+                            )
+                            retry_messages = [
+                                {"role": "system", "content": retry_system},
+                                {"role": "user", "content": final_text}
+                            ]
+                            try:
+                                retry_resp = self._format_text.generate(retry_messages)
+                                if retry_resp:
+                                    retry_content = retry_resp.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
+                                    if retry_content and not re.search(r'[\u4e00-\u9fff]', retry_content):
+                                        print("回退重试成功，使用英文版本。")
+                                        formatted_content = retry_content
+                                    else:
+                                        print("回退重试仍含中文，保留原结果。")
+                            except Exception as re_try_e:
+                                print(f"英文回退重试失败: {re_try_e}")
                         print('Formatted text:\n' + formatted_content)
                         
                         # 自动粘贴（如果启用）
