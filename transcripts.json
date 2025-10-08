@@ -1,5 +1,101 @@
 [
   {
+    "timestamp": "2025-10-08T16:04:26.540530",
+    "original": "完善词典功能。 可以自动替换成目标词语。",
+    "formatted": "完善词典功能，能自动替换成目标词语。",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-08T16:04:08.704936",
+    "original": "完善词典功能。 现在用户说目，说话中有目标词语，则会自动替换成词典中的设置的新的词语。",
+    "formatted": "完善词典功能：现在当用户说“目”，且说话中包含目标词语时，会自动替换成词典中设置的新词语。",
+    "word_count": 38
+  },
+  {
+    "timestamp": "2025-10-08T16:03:06.394688",
+    "original": "a 下划线 b 下划线 c 点 py 有什么作用？",
+    "formatted": "a_b_c.py 有什么作用？",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-08T16:02:05.344761",
+    "original": "demo 4.0 py 有什么作用？",
+    "formatted": "demo4.0.py 有什么作用？",
+    "word_count": 13
+  },
+  {
+    "timestamp": "2025-10-08T16:01:54.861132",
+    "original": "demo 4.0 py有什么作用？",
+    "formatted": "demo4.0.py 有什么作用？",
+    "word_count": 13
+  },
+  {
+    "timestamp": "2025-10-08T16:01:43.113223",
+    "original": "demo 4.0 py有什么作用？",
+    "formatted": "demo4.0.py 有什么作用？",
+    "word_count": 13
+  },
+  {
+    "timestamp": "2025-10-08T16:01:23.760401",
+    "original": "今天老张过来吗？",
+    "formatted": "今天张三过来吗？",
+    "word_count": 7
+  },
+  {
+    "timestamp": "2025-10-08T15:55:05.176345",
+    "original": "这段话里，老张变成了张三，是应用的词典，但是终端并没有打印用户词典已应用于模型输入文本。",
+    "formatted": "这段话里，张三变成了张三，是应用了用户词典，但终端并没有打印“用户词典已应用于模型输入文本”。",
+    "word_count": 40
+  },
+  {
+    "timestamp": "2025-10-08T15:54:37.044155",
+    "original": "这里运用了词典，但是没有显示。 应用词典。",
+    "formatted": "这里用了词典，但没显示出来。得应用一下词典。",
+    "word_count": 17
+  },
+  {
+    "timestamp": "2025-10-08T15:53:32.027940",
+    "original": "问一下老张在哪里？",
+    "formatted": "想了解一下张三现在在什么地方。",
+    "word_count": 8
+  },
+  {
+    "timestamp": "2025-10-08T15:53:17.238035",
+    "original": "看一下Demo四点py有什么作用。",
+    "formatted": "看一下demo4.py有什么作用。",
+    "word_count": 16
+  },
+  {
+    "timestamp": "2025-10-08T15:52:55.125660",
+    "original": "看一下demo试点py有什么作用？",
+    "formatted": "看一下demo.py有什么作用？",
+    "word_count": 16
+  },
+  {
+    "timestamp": "2025-10-08T15:52:10.084705",
+    "original": "看一下demo四点py有什么作用？",
+    "formatted": "看一下demo4.py有什么作用？",
+    "word_count": 16
+  },
+  {
+    "timestamp": "2025-10-08T15:51:39.649245",
+    "original": "看一下demo 4.0 py有什么功能。",
+    "formatted": "看一下 demo4.0.py 有什么功能。",
+    "word_count": 16
+  },
+  {
+    "timestamp": "2025-10-08T15:47:21.965149",
+    "original": "在识别完成时，如何自动套用这些替换规则？",
+    "formatted": "识别完成后，怎么自动套用这些替换规则？",
+    "word_count": 18
+  },
+  {
+    "timestamp": "2025-10-08T15:47:02.437141",
+    "original": "在识别完成时，如何自动套用这些替换规则？",
+    "formatted": "识别完成后，怎么自动套用这些替换规则？",
+    "word_count": 18
+  },
+  {
     "timestamp": "2025-10-08T15:46:33.645955",
     "original": "完成词典界面。",
     "formatted": "完成词典界面。",

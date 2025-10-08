@@ -270,12 +270,12 @@ class VoiceRecognitionGUI:
 
         ttk.Label(form_frame, text="原词").grid(row=0, column=0, sticky=tk.W)
         self.ud_src_var = tk.StringVar()
-        src_entry = ttk.Entry(form_frame, textvariable=self.ud_src_var, width=22)
+        src_entry = ttk.Entry(form_frame, textvariable=self.ud_src_var, width=15)
         src_entry.grid(row=0, column=1, padx=(6,20), sticky=tk.W)
 
         ttk.Label(form_frame, text="替换为").grid(row=0, column=2, sticky=tk.W)
         self.ud_dst_var = tk.StringVar()
-        dst_entry = ttk.Entry(form_frame, textvariable=self.ud_dst_var, width=30)
+        dst_entry = ttk.Entry(form_frame, textvariable=self.ud_dst_var, width=15)
         dst_entry.grid(row=0, column=3, padx=(6,20), sticky=tk.W)
 
         def add_or_update():
@@ -1561,6 +1561,20 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 lang_mode = self.gui_app.language_mode_var.get() if hasattr(self.gui_app, 'language_mode_var') else '中文'
                 print(f"当前语言模式: {lang_mode}, 场景: {template_name}")
 
+                # 1.1 应用用户词典替换（不修改原始 final_text，用于发送给模型的文本）
+                processed_for_model = final_text
+                try:
+                    if hasattr(self.gui_app, 'user_dict') and isinstance(self.gui_app.user_dict, dict):
+                        processed_for_model, dict_hits = self._apply_user_dictionary(processed_for_model, self.gui_app.user_dict)
+                        if dict_hits:
+                            # 详细列出替换条目 src->dst(次数)
+                            hits_str = "; ".join([f"{src}->{dst}({cnt}处)" for src, dst, cnt in dict_hits])
+                            print(f"用户词典替换明细: {hits_str}")
+                        else:
+                            print("用户词典无匹配替换")
+                except Exception as dic_e:
+                    print(f"应用用户词典失败: {dic_e}")
+
                 # 2. 根据配置构造 system 提示词（优先：场景 > 默认 > 内置）
                 system_prompt = None
                 try:
@@ -1612,7 +1626,7 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 # 3. 组装 messages
                 messages = [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": final_text}
+                    {"role": "user", "content": processed_for_model}
                 ]
                 print(f"使用 system 提示词(截断显示): {system_prompt[:60]}...")
                 print(f"messages: {messages}")
@@ -1686,6 +1700,30 @@ class CustomRecognizer(HoldToTalkRecognizer):
             
             # 清空结果
             self._results = []
+
+    # ================= 用户词典替换逻辑 =================
+    def _apply_user_dictionary(self, text: str, mapping: dict):
+        """
+        按用户词典顺序(长词优先)进行替换。
+        返回 (new_text, hits)
+        hits: list[(src, dst, count)] 仅包含发生实际替换的条目。
+        """
+        if not mapping:
+            return text, []
+        hits = []
+        # 长度优先，避免短词抢占长词的一部分
+        for src in sorted(mapping.keys(), key=lambda k: len(k), reverse=True):
+            if not src:
+                continue
+            dst = mapping[src]
+            try:
+                count = text.count(src)
+                if count > 0:
+                    text = text.replace(src, dst)
+                    hits.append((src, dst, count))
+            except Exception:
+                continue
+        return text, hits
             
 if __name__ == "__main__":
     app = VoiceRecognitionGUI()
