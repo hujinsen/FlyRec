@@ -7,5 +7,26 @@
       "聊天": "现在用户处在聊天窗口"
     }
   },
-  "output_language": "英语"
+  "output_language": "中文",
+  "copywriting_assistant": {
+    "emotions": [
+      "焦虑→笃定"
+    ],
+    "styles": [
+      "俏皮槽点",
+      "结构分析"
+    ],
+    "frameworks": [
+      "自动"
+    ],
+    "ctas": [
+      "私信领取"
+    ],
+    "length": "100",
+    "versions": 2,
+    "expand": true,
+    "gold": true,
+    "parallel": false,
+    "platform": "小红书"
+  }
 }

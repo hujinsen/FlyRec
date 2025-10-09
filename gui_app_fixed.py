@@ -18,6 +18,7 @@ from demo4 import HoldToTalkRecognizer
 import keyboard
 import sys
 import re  # 新增: 用于检测输出中是否含有中文字符
+from copywriting_assistant import CopywritingAssistantWindow  # 新增文案助手
 
 import psutil
 try:
@@ -36,6 +37,7 @@ except ImportError:
     print("缺少 soundfile 库，音效功能不可用。安装: uv add soundfile  或  pip install soundfile")
 
 
+os.environ['DASHSCOPE_API_KEY'] =  'sk-2d627fbbc4fa491db207c632a77f2852'
 
 class VoiceRecognitionGUI:
     """语音识别工具图形界面"""
@@ -674,6 +676,42 @@ class VoiceRecognitionGUI:
         ttk.Checkbutton(other, text="自动粘贴识别结果", variable=self.auto_paste_var).pack(anchor=tk.W)
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(other, text="最小化到系统托盘", variable=self.minimize_to_tray_var).pack(anchor=tk.W)
+
+        # 在设置页面底部空白区域（红框标注位置）添加打开文案助手按钮
+        launch_frame = ttk.Frame(self.content_frame)
+        launch_frame.pack(fill=tk.X, pady=(18,10))
+        ttk.Separator(launch_frame, orient='horizontal').pack(fill=tk.X, pady=(0,8))
+        ttk.Button(launch_frame, text="🪄 打开文案助手", command=self.open_copywriting_assistant, width=20).pack(anchor=tk.W)
+
+    def open_copywriting_assistant(self):
+        """弹出文案助手窗口，传入当前最近识别或当前选中文本作为素材"""
+        # 取最近一次处理后文本作为初始素材
+        initial_text = ""
+        try:
+            if self.transcripts:
+                initial_text = self.transcripts[0].get('formatted') or self.transcripts[0].get('original','')
+        except Exception:
+            initial_text = ""
+
+        # 回调：选择版本后插入到最近转录展示或复制剪贴板
+        def _on_select(text: str):
+            try:
+                import pyperclip
+                pyperclip.copy(text)
+            except Exception:
+                pass
+            # 新建一条临时记录（不计入统计，只方便用户再次查看）
+            transcript = {
+                "timestamp": datetime.now().isoformat(),
+                "original": initial_text or text,
+                "formatted": text,
+                "word_count": len([c for c in text if c.isalnum()])
+            }
+            self.transcripts.insert(0, transcript)
+            self.update_recent_transcripts()
+            self.update_transcripts_display()
+
+        CopywritingAssistantWindow(self.root, initial_text, on_select_callback=_on_select)
     # 已移动：智能场景切换复选框在上方场景区域
 
     def save_prompts_from_ui(self):
