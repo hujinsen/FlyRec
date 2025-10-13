@@ -19,6 +19,10 @@ import keyboard
 import sys
 import re  # 新增: 用于检测输出中是否含有中文字符
 from copywriting_assistant import CopywritingAssistantWindow  # 新增文案助手
+from text_format import TextGenerator  # 语义润色生成
+from pynput import mouse  # 监听鼠标选择
+import pyautogui  # 复制/粘贴辅助
+import pyperclip  # 读取剪贴板内容
 
 import psutil
 try:
@@ -118,6 +122,18 @@ class VoiceRecognitionGUI:
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
         # 旧 template_var 废弃，改用 language_mode_var + template_scene_var
         self.smart_template_var = tk.BooleanVar(value=True)  # 智能模板切换开关
+
+        # ---- 选中文本润色功能相关 ----
+        self.enable_selection_refine = True  # 后续可做成设置项
+        self._last_selection_text = ""
+        self._selection_popup = None
+        self._selection_result_window = None
+        self._selection_processing = False
+        self._text_generator = TextGenerator()
+        # 启动鼠标监听（单独线程即可，pynput 自带守护）
+        threading.Thread(target=self._start_mouse_listener, daemon=True).start()
+        # 抑制 Ctrl 监听（防止程序内部 pyautogui.hotkey 触发双击Ctrl逻辑）
+        self._suppress_ctrl_listener = False
         
         # 应用程序模板映射
         self.app_template_mapping = {
@@ -782,6 +798,9 @@ class VoiceRecognitionGUI:
                 self._last_ctrl_release_time = 0.0
                 def _on_release(event):
                     try:
+                        # 若当前处于程序内部模拟 Ctrl 阶段，则不触发双击逻辑
+                        if getattr(self, '_suppress_ctrl_listener', False):
+                            return
                         if event.name in ('ctrl', 'left ctrl', 'right ctrl'):
                             self.handle_double_ctrl_release()
                     except Exception as ee:
@@ -811,7 +830,11 @@ class VoiceRecognitionGUI:
         while True:
             try:
                 if getattr(self, 'hotkey_mode_var', None) and self.hotkey_mode_var.get() == 'hold':
-                    is_pressed = self.is_hotkey_combination_pressed()
+                    # 如果正在抑制 Ctrl 监听（内部模拟复制），则跳过一次检测，避免误判
+                    if getattr(self, '_suppress_ctrl_listener', False):
+                        is_pressed = False
+                    else:
+                        is_pressed = self.is_hotkey_combination_pressed()
                     if is_pressed and not was_pressed:
                         if not self.is_recording:
                             self.root.after(0, self.start_recording)
@@ -1503,6 +1526,278 @@ class VoiceRecognitionGUI:
         if not self._sound_preloaded:
             self.preload_sounds()
         threading.Thread(target=self._play_sound_cached_or_load, args=(which,), daemon=True).start()
+
+    # ================== 选中文本润色功能 ==================
+    def _start_mouse_listener(self):
+        """启动鼠标监听，左键释放后尝试捕获当前选中文本并弹出浮层按钮"""
+        def on_click(x, y, button, pressed):
+            try:
+                if not self.enable_selection_refine:
+                    return
+                # 仅在左键释放时处理
+                from pynput.mouse import Button
+                if (not pressed) and button == Button.left:
+                    # 轻微延迟让系统完成选择
+                    self.root.after(80, lambda: self._try_capture_selection_and_show(x, y))
+            except Exception as e:
+                print(f"鼠标监听异常: {e}")
+        try:
+            listener = mouse.Listener(on_click=on_click)
+            listener.daemon = True
+            listener.start()
+        except Exception as e:
+            print(f"启动鼠标监听失败: {e}")
+
+    def _try_capture_selection_and_show(self, x: int, y: int):
+        """尝试获取选中文本并显示浮层"""
+        if self._selection_processing:  # 正在处理上一次
+            return
+        text = self._capture_selection_text()
+        if not text:
+            return
+        # 去除首尾空白
+        s = text.strip()
+        if len(s) < 2:
+            return
+        if len(s) > 2000:  # 过长忽略，避免占用
+            return
+        if s == self._last_selection_text:
+            return
+        self._last_selection_text = s
+        self._show_selection_popup(x, y, s)
+
+    def _capture_selection_text(self) -> str:
+        """通过模拟 Ctrl+C 获取当前选中文本，不改变用户最终剪贴板（尝试恢复）。"""
+        try:
+            old_clip = ""
+            try:
+                old_clip = pyperclip.paste()
+            except Exception:
+                old_clip = ""
+            # 发送复制
+            try:
+                # 设置抑制标志，避免触发双击 Ctrl 逻辑
+                self._suppress_ctrl_listener = True
+                pyautogui.hotkey('ctrl', 'c')
+            except Exception:
+                return ""
+            time.sleep(0.12)  # 等待复制完成
+            try:
+                new_text = pyperclip.paste()
+            except Exception:
+                new_text = ""
+            # 恢复旧剪贴板
+            try:
+                pyperclip.copy(old_clip)
+            except Exception:
+                pass
+            # 延迟恢复抑制标志（确保释放事件也被忽略）
+            self.root.after(160, lambda: setattr(self, '_suppress_ctrl_listener', False))
+            return new_text or ""
+        except Exception as e:
+            print(f"捕获选中文本失败: {e}")
+            # 兜底恢复
+            self._suppress_ctrl_listener = False
+            return ""
+
+    def _show_selection_popup(self, x: int, y: int, text: str):
+        """在鼠标附近显示一个小浮层按钮“AI润色”"""
+        # 销毁已有
+        try:
+            if self._selection_popup and self._selection_popup.winfo_exists():
+                self._selection_popup.destroy()
+        except Exception:
+            pass
+        popup = tk.Toplevel(self.root)
+        self._selection_popup = popup
+        popup.overrideredirect(True)
+        popup.attributes('-topmost', True)
+        popup.attributes('-alpha', 0.95)
+        bg_color = '#222831'
+        popup.configure(bg=bg_color)
+        # 位置微偏移
+        popup.geometry(f"+{x+14}+{y+14}")
+        frame = tk.Frame(popup, bg=bg_color)
+        frame.pack(padx=6, pady=6)
+        btn = tk.Button(frame, text='AI润色', relief='flat', fg='#ffffff', bg='#00a884',
+                        activebackground='#00916e', cursor='hand2',
+                        command=lambda: self._on_selection_refine_click(text))
+        btn.pack()
+        # 自动关闭计时
+        popup.after(6000, lambda: popup.destroy() if popup.winfo_exists() else None)
+
+    def _on_selection_refine_click(self, text: str):
+        """点击浮层按钮后开始处理，并打开结果窗口"""
+        try:
+            if self._selection_popup and self._selection_popup.winfo_exists():
+                self._selection_popup.destroy()
+        except Exception:
+            pass
+        self._open_selection_result_window(original_text=text)
+        self._run_selection_generation(original_text=text)
+
+    def _open_selection_result_window(self, original_text: str):
+        """创建/重置结果窗口：包含 原文预览 + 结果文本框 + 按钮（替换 / 重新生成）"""
+        # 已存在则复用
+        if self._selection_result_window and self._selection_result_window.winfo_exists():
+            win = self._selection_result_window
+            # 清理旧内容
+            try:
+                self._sel_orig_text.config(state='normal')
+                self._sel_orig_text.delete(1.0, tk.END)
+                self._sel_orig_text.insert(tk.END, original_text)
+                self._sel_orig_text.config(state='disabled')
+                self._sel_out_text.delete(1.0, tk.END)
+                self._sel_status_var.set('生成中...')
+            except Exception:
+                pass
+            return
+        win = tk.Toplevel(self.root)
+        self._selection_result_window = win
+        win.title("选中文本润色")
+        win.geometry("760x480")
+        win.attributes('-topmost', True)
+        win.grid_rowconfigure(1, weight=1)
+        win.grid_columnconfigure(0, weight=1)
+        # 顶部状态栏
+        top = ttk.Frame(win)
+        top.grid(row=0, column=0, sticky='ew', padx=8, pady=(8,4))
+        self._sel_status_var = tk.StringVar(value='生成中...')
+        ttk.Label(top, textvariable=self._sel_status_var).pack(side=tk.LEFT)
+        # 主体区（上下分区：原文 + 输出）
+        body = ttk.Frame(win)
+        body.grid(row=1, column=0, sticky='nsew', padx=8, pady=4)
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_rowconfigure(1, weight=1)
+        body.grid_columnconfigure(0, weight=1)
+        # 原文
+        orig_label = ttk.Label(body, text='原文 (只读)', font=('Arial', 10, 'bold'))
+        orig_label.grid(row=0, column=0, sticky='w')
+        self._sel_orig_text = scrolledtext.ScrolledText(body, height=8, wrap=tk.WORD, font=('Consolas', 11))
+        self._sel_orig_text.grid(row=0, column=0, sticky='nsew', pady=(2,10))
+        self._sel_orig_text.insert(tk.END, original_text)
+        self._sel_orig_text.config(state='disabled')
+        # 输出
+        out_label = ttk.Label(body, text='生成结果', font=('Arial', 10, 'bold'))
+        out_label.grid(row=1, column=0, sticky='w')
+        self._sel_out_text = scrolledtext.ScrolledText(body, wrap=tk.WORD, font=('Consolas', 11))
+        self._sel_out_text.grid(row=1, column=0, sticky='nsew', pady=(2,0))
+        # 底部按钮栏
+        btn_bar = ttk.Frame(win)
+        btn_bar.grid(row=2, column=0, sticky='ew', padx=8, pady=(6,10))
+        btn_bar.grid_columnconfigure(0, weight=1)
+        self._sel_replace_btn = ttk.Button(btn_bar, text='替换 (Ctrl+V)', command=self._replace_selection_text, state='disabled')
+        self._sel_replace_btn.pack(side=tk.LEFT)
+        self._sel_regen_btn = ttk.Button(btn_bar, text='重新生成', command=self._regen_selection_text, state='disabled')
+        self._sel_regen_btn.pack(side=tk.LEFT, padx=(8,0))
+        ttk.Button(btn_bar, text='复制结果', command=self._copy_selection_result).pack(side=tk.LEFT, padx=(8,0))
+        ttk.Button(btn_bar, text='关闭', command=win.destroy).pack(side=tk.RIGHT)
+        # ESC 关闭
+        win.bind('<Escape>', lambda e: win.destroy())
+
+    def _build_selection_messages(self, raw_text: str) -> List[Dict[str, str]]:
+        """根据当前语言/场景生成 messages。与语音流程保持一致的风格选择逻辑（简化版本）。"""
+        scene = self.get_smart_template()
+        lang = self.language_mode_var.get()
+        # 选取 system prompt
+        system_prompt = self.builtin_default_prompt
+        try:
+            # 场景自定义优先
+            scene_prompt = self.prompts.get('scenes', {}).get(scene)
+            if scene_prompt:
+                system_prompt = scene_prompt
+            elif self.prompts.get('default'):
+                system_prompt = self.prompts['default']
+            elif scene in self.builtin_scene_prompts:
+                system_prompt = self.builtin_scene_prompts[scene]
+        except Exception:
+            pass
+        # 英语模式附加
+        if lang == '英语':
+            system_prompt += "\n请始终用英文输出，不要包含中文。"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": raw_text}
+        ]
+        return messages
+
+    def _run_selection_generation(self, original_text: str):
+        """后台线程调用模型生成并更新 UI"""
+        if self._selection_processing:
+            return
+        self._selection_processing = True
+        self._sel_status_var.set('生成中...')
+        self._sel_replace_btn.config(state='disabled')
+        self._sel_regen_btn.config(state='disabled')
+        messages = self._build_selection_messages(original_text)
+        def worker():
+            try:
+                resp = self._text_generator.generate(messages)
+                # 解析
+                content = ''
+                try:
+                    content = resp.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '')
+                except Exception:
+                    content = ''
+                if not content:
+                    content = '(空响应)'
+                def update():
+                    if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
+                        return
+                    self._sel_out_text.delete(1.0, tk.END)
+                    self._sel_out_text.insert(tk.END, content)
+                    self._sel_status_var.set('完成')
+                    self._sel_replace_btn.config(state='normal')
+                    self._sel_regen_btn.config(state='normal')
+                self.root.after(0, update)
+            except Exception as e:
+                def fail():
+                    if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
+                        return
+                    self._sel_status_var.set(f'失败: {e}')
+                    self._sel_regen_btn.config(state='normal')
+                self.root.after(0, fail)
+            finally:
+                self._selection_processing = False
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _regen_selection_text(self):
+        """重新生成当前结果窗口内容"""
+        if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
+            return
+        try:
+            orig = self._sel_orig_text.get(1.0, tk.END).strip()
+        except Exception:
+            return
+        if not orig:
+            return
+        self._run_selection_generation(orig)
+
+    def _copy_selection_result(self):
+        try:
+            txt = self._sel_out_text.get(1.0, tk.END).strip()
+            if txt:
+                pyperclip.copy(txt)
+                self._sel_status_var.set('结果已复制')
+        except Exception as e:
+            self._sel_status_var.set(f'复制失败: {e}')
+
+    def _replace_selection_text(self):
+        """将生成结果粘贴到当前光标位置（用户需自行保持原选区焦点）"""
+        try:
+            txt = self._sel_out_text.get(1.0, tk.END).strip()
+            if not txt:
+                return
+            pyperclip.copy(txt)
+            # 粘贴
+            time.sleep(0.05)
+            try:
+                pyautogui.hotkey('ctrl', 'v')
+                self._sel_status_var.set('已替换')
+            except Exception as e:
+                self._sel_status_var.set(f'粘贴失败: {e}')
+        except Exception as e:
+            self._sel_status_var.set(f'异常: {e}')
 
     def _play_sound_cached_or_load(self, which: str):
         if sf is None:
