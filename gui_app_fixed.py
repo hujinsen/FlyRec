@@ -57,7 +57,7 @@ class VoiceRecognitionGUI:
         threading.Thread(target=self.preload_sounds).start()
         
         self.root.title("FlyRecDemo")
-        self.root.geometry("800x850")
+        self.root.geometry("850x850")
         
         # 数据存储
         self.stats_file = "voice_stats.json"
@@ -76,23 +76,10 @@ class VoiceRecognitionGUI:
             self.current_hotkey = loaded_hotkey
         # 加载提示词配置（中文默认 + 场景提示词）
         self.prompts = self.load_prompts_config()
-        # 内置默认与场景提示词
-        self.builtin_default_prompt = "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
-        self.builtin_scene_prompts = {
-            '聊天': (
-                "用户正在用聊天应用，根据用户口述输出自然、简洁、友好的聊天文本：\n"
-                "- 保留原本语气（口语/轻松）\n- 修正明显错别字与语序\n- 不扩写无关内容，不加入解释\n- 只输出润色后的文本，不加前缀或说明。"
-            ),
-            '邮件': (
-                "用户正在写邮件，请将用户口述整理 / 润色成一封正式、礼貌、结构清晰的邮件：\n"
-                "要求：\n1. 保留关键信息与时间节点，不杜撰事实\n2. 语气自然、礼貌、简洁、专业\n3. 列表化条目可用有序或无序方式提升可读性。\n5.邮件格式规范，不要markdow格式。"
-                "我的个人信息：姓名：Jason Hu，邮箱：hujsen@163.com，电话：13290818863，地址：宁波市海曙区123号。"
-            ),
-            '代码': (
-                "用户正在编写代码，有问题想问你，但是你不用回答，只需要将问题文本进行润色：\n -用户如果说文件名或代码行号，保留这些信息（如果用户说：demo4点py，则输出demo4.py，如果用户说：test下划线app点py，则输出test_app.py ，以此类推）。\n -保留原本语气（口语/轻松）\n -修正明显错别字与语序\n -只输出润色后的文本，不加前缀或说明。"
-    
-            )
-        }
+        # 内置默认与场景提示词（改为从配置文件加载，可缺省回退到内置硬编码字典）
+        self.builtin_default_prompt = ""
+        self.builtin_scene_prompts = {}
+        self.load_builtin_prompts_from_config()
         # 语言模式(中文/英语) + 场景(文本/聊天/邮件/代码) 默认中文, 之后尝试加载上次保存
         self.language_mode_var = tk.StringVar(value='中文')
         loaded_language = self.load_language_config()
@@ -123,12 +110,7 @@ class VoiceRecognitionGUI:
         # 旧 template_var 废弃，改用 language_mode_var + template_scene_var
         self.smart_template_var = tk.BooleanVar(value=True)  # 智能模板切换开关
 
-        # ---- 选中文本润色功能相关 ----
-        self.enable_selection_refine = True  # 后续可做成设置项
-        self._last_selection_text = ""
-        self._selection_popup = None
-        self._selection_result_window = None
-        self._selection_processing = False
+    # （已移除）选中文本 AI 润色功能相关变量删除
         # self._text_generator = TextGenerator()  # 旧直连方式
         # 初始化统一服务运行时（允许 config.json 中 future 字段控制后端）
         try:
@@ -142,8 +124,7 @@ class VoiceRecognitionGUI:
             print(f"初始化服务层失败，回退到直接 TextGenerator: {_rt_e}")
             self.runtime = None
             self._text_generator = TextGenerator()
-        # 启动鼠标监听（单独线程即可，pynput 自带守护）
-        threading.Thread(target=self._start_mouse_listener, daemon=True).start()
+    # （选中文本润色功能已移除，鼠标监听不再启动）
         # 抑制 Ctrl 监听（防止程序内部 pyautogui.hotkey 触发双击Ctrl逻辑）
         self._suppress_ctrl_listener = False
         
@@ -689,13 +670,11 @@ class VoiceRecognitionGUI:
         # 智能场景切换（从“其他设置”移动至此）
         ttk.Checkbutton(scene_frame, text="智能场景切换（自动选择场景）", variable=self.smart_template_var).grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(6,0))
 
-        # 提示词配置（精简版，仅保留预留按钮，当前使用内置/配置默认逻辑）
+        # 提示词配置入口
         prompt_frame = ttk.LabelFrame(self.content_frame, text="提示词配置", padding=10)
         prompt_frame.pack(fill=tk.X, expand=False)
-        ttk.Label(prompt_frame, text="当前版本使用内置/已加载的默认提示词；自定义多场景编辑稍后提供。", foreground='gray').pack(anchor=tk.W)
-        def _placeholder_edit():
-            messagebox.showinfo("提示", "自定义提示词编辑功能将在后续版本开放。当前使用已有默认逻辑。")
-        ttk.Button(prompt_frame, text="提示词配置（预留）", command=_placeholder_edit).pack(anchor=tk.W, pady=(6,0))
+        ttk.Label(prompt_frame, text="编辑默认/场景提示词。保存后立即生效（写入config.json）。", foreground='gray').pack(anchor=tk.W)
+        ttk.Button(prompt_frame, text="打开提示词配置", command=self.open_prompt_config_window).pack(anchor=tk.W, pady=(6,0))
 
         # 其他设置
         other = ttk.LabelFrame(self.content_frame, text="其他设置", padding=10)
@@ -720,6 +699,296 @@ class VoiceRecognitionGUI:
         """从界面采集并保存提示词配置"""
         # 精简版：当前无多文本编辑控件，保留占位函数避免旧调用报错
         messagebox.showinfo("提示", "当前版本未开放自定义多场景提示词编辑。使用内置默认配置。")
+
+    # ================= 内置提示词加载 =================
+    def load_builtin_prompts_from_config(self):
+        """加载内置默认与场景提示词：
+        优先读取 config.json -> builtin_prompts: { default: str, scenes: {场景: str} }
+        若不存在则写入默认模板（只写一次，避免每次覆盖用户自定义）。
+        """
+        default_fallback = (
+            "用户口述文本发给你，你首先理解用户真实意图，尽量不更改口述文本的情况下，输出用户真实意图的文本。"
+            "注意：即使用户口述是问句，你也不需要回答，只需输出用户想表达的文本。"
+        )
+        scenes_fallback = {
+            '聊天': (
+                "用户正在用聊天应用，根据用户口述输出自然、简洁、友好的聊天文本：\n"
+                "- 保留原本语气（口语/轻松）\n- 修正明显错别字与语序\n- 不扩写无关内容，不加入解释\n- 只输出润色后的文本，不加前缀或说明。"
+            ),
+            '邮件': (
+                "用户正在写邮件，请将用户口述整理 / 润色成一封正式、礼貌、结构清晰的邮件：\n"
+                "要求：\n1. 保留关键信息与时间节点，不杜撰事实\n2. 语气自然、礼貌、简洁、专业\n3. 列表化条目可用有序或无序方式提升可读性。\n5.邮件格式规范，不要markdown格式。"
+            ),
+            '代码': (
+                "用户正在编写代码，有问题想问你，但是你不用回答，只需要将问题文本进行润色：\n"
+                "- 用户如果说文件名或代码行号，保留这些信息（若说 demo4 点 py 输出 demo4.py）\n"
+                "- 保留原本语气（口语/轻松）\n- 修正明显错别字与语序\n- 只输出润色后的文本，不加前缀或说明。"
+            )
+        }
+        # 暴露 fallback 供“恢复出厂默认”使用
+        self._builtin_default_fallback = default_fallback
+        self._builtin_scenes_fallback = scenes_fallback
+        try:
+            cfg = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f) or {}
+            builtin_cfg = cfg.get('builtin_prompts') or {}
+            self.builtin_default_prompt = builtin_cfg.get('default') or default_fallback
+            scenes_cfg = builtin_cfg.get('scenes') or {}
+            # 只接受已知场景键；如果未来增加场景，可放宽
+            merged = {}
+            for k, v in scenes_fallback.items():
+                merged[k] = scenes_cfg.get(k) or v
+            self.builtin_scene_prompts = merged
+
+            # 若文件中没有 builtin_prompts，则写入一次默认结构（不覆盖已有）
+            if 'builtin_prompts' not in cfg:
+                cfg['builtin_prompts'] = {
+                    'default': self.builtin_default_prompt,
+                    'scenes': self.builtin_scene_prompts
+                }
+                try:
+                    with open(self.config_file, 'w', encoding='utf-8') as f:
+                        json.dump(cfg, f, ensure_ascii=False, indent=2)
+                except Exception as we:
+                    print(f"写入默认 builtin_prompts 失败: {we}")
+        except Exception as e:
+            print(f"加载 builtin_prompts 失败，使用内置硬编码: {e}")
+            self.builtin_default_prompt = default_fallback
+            self.builtin_scene_prompts = scenes_fallback
+
+    # ================= 提示词配置窗口 =================
+    def open_prompt_config_window(self):
+        # 若已存在窗口，聚焦
+        if hasattr(self, '_prompt_cfg_win') and self._prompt_cfg_win and self._prompt_cfg_win.winfo_exists():
+            self._prompt_cfg_win.lift(); self._prompt_cfg_win.focus_force(); return
+
+        win = tk.Toplevel(self.root)
+        win.title("提示词配置（用户 & 内置）")
+        win.geometry("980x740")
+        win.transient(self.root)
+        self._prompt_cfg_win = win
+
+        # 状态变量提前定义（供各内部函数使用）
+        status_var = tk.StringVar(value='')
+
+        # Notebook
+        nb = ttk.Notebook(win)
+        nb.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        user_tab = ttk.Frame(nb)
+        builtin_tab = ttk.Frame(nb)
+        nb.add(user_tab, text='用户自定义')
+        nb.add(builtin_tab, text='内置模板')
+
+        # ---------------- 用户自定义 ----------------
+        ttk.Label(user_tab, text="默认提示词 (留空则回退内置默认)", font=('Arial', 11, 'bold')).pack(anchor=tk.W, padx=6, pady=(6,4))
+        ut_default_text = tk.Text(user_tab, height=6, wrap=tk.WORD, font=('Consolas', 11))
+        ut_default_text.pack(fill=tk.X, padx=8)
+        if self.prompts.get('default'):
+            ut_default_text.insert('1.0', self.prompts['default'])
+
+        ut_scene_frame = ttk.LabelFrame(user_tab, text='场景提示词 (留空 = 使用默认或内置)', padding=8)
+        ut_scene_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=8)
+        ut_scene_canvas = tk.Canvas(ut_scene_frame, highlightthickness=0)
+        ut_scene_scroll = ttk.Scrollbar(ut_scene_frame, orient='vertical', command=ut_scene_canvas.yview)
+        ut_scene_inner = ttk.Frame(ut_scene_canvas)
+        ut_scene_inner.bind('<Configure>', lambda e: ut_scene_canvas.configure(scrollregion=ut_scene_canvas.bbox('all')))
+        ut_scene_canvas.create_window((0,0), window=ut_scene_inner, anchor='nw')
+        ut_scene_canvas.configure(yscrollcommand=ut_scene_scroll.set)
+        ut_scene_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        ut_scene_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        user_scene_widgets = {}
+
+        def _add_user_scene_row(scene_name: str, init_text: str = ''):
+            if scene_name in user_scene_widgets:
+                return
+            row = ttk.Frame(ut_scene_inner)
+            row.pack(fill=tk.X, pady=4)
+            ttk.Label(row, text=scene_name, width=10).pack(side=tk.LEFT, anchor=tk.N, padx=(0,4))
+            txt = tk.Text(row, height=4, wrap=tk.WORD, font=('Consolas', 10))
+            txt.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            if init_text:
+                txt.insert('1.0', init_text)
+            def _del():
+                if messagebox.askyesno('确认', f'删除用户场景 “{scene_name}”？'):
+                    row.destroy(); user_scene_widgets.pop(scene_name, None)
+            ttk.Button(row, text='删除', width=6, command=_del).pack(side=tk.LEFT, padx=4)
+            user_scene_widgets[scene_name] = txt
+
+        for sc, val in (self.prompts.get('scenes') or {}).items():
+            _add_user_scene_row(sc, val)
+
+        add_user_bar = ttk.Frame(user_tab)
+        add_user_bar.pack(fill=tk.X, padx=8, pady=(0,6))
+        ttk.Label(add_user_bar, text='新增场景:').pack(side=tk.LEFT)
+        ut_new_scene_var = tk.StringVar()
+        ttk.Entry(add_user_bar, textvariable=ut_new_scene_var, width=16).pack(side=tk.LEFT, padx=6)
+        def _user_add_scene():
+            name = ut_new_scene_var.get().strip()
+            if not name:
+                return
+            if name in user_scene_widgets:
+                messagebox.showwarning('提示', '场景已存在'); return
+            if len(name) > 20:
+                messagebox.showwarning('提示', '名称过长 (<=20)'); return
+            _add_user_scene_row(name)
+            ut_new_scene_var.set('')
+        ttk.Button(add_user_bar, text='添加场景', command=_user_add_scene).pack(side=tk.LEFT)
+
+        # ---------------- 内置模板 ----------------
+        ttk.Label(builtin_tab, text='内置默认提示词', font=('Arial', 11, 'bold')).pack(anchor=tk.W, padx=6, pady=(6,4))
+        bt_default_text = tk.Text(builtin_tab, height=6, wrap=tk.WORD, font=('Consolas', 11))
+        bt_default_text.pack(fill=tk.X, padx=8)
+        bt_default_text.insert('1.0', self.builtin_default_prompt or '')
+
+        bt_scene_frame = ttk.LabelFrame(builtin_tab, text='内置场景提示词 (影响“填充内置”与回退逻辑)', padding=8)
+        bt_scene_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=8)
+        bt_scene_canvas = tk.Canvas(bt_scene_frame, highlightthickness=0)
+        bt_scene_scroll = ttk.Scrollbar(bt_scene_frame, orient='vertical', command=bt_scene_canvas.yview)
+        bt_scene_inner = ttk.Frame(bt_scene_canvas)
+        bt_scene_inner.bind('<Configure>', lambda e: bt_scene_canvas.configure(scrollregion=bt_scene_canvas.bbox('all')))
+        bt_scene_canvas.create_window((0,0), window=bt_scene_inner, anchor='nw')
+        bt_scene_canvas.configure(yscrollcommand=bt_scene_scroll.set)
+        bt_scene_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        bt_scene_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        builtin_scene_widgets = {}
+
+        def _add_builtin_scene_row(scene_name: str, init_text: str = ''):
+            if scene_name in builtin_scene_widgets:
+                return
+            row = ttk.Frame(bt_scene_inner)
+            row.pack(fill=tk.X, pady=4)
+            ttk.Label(row, text=scene_name, width=10).pack(side=tk.LEFT, anchor=tk.N, padx=(0,4))
+            txt = tk.Text(row, height=4, wrap=tk.WORD, font=('Consolas', 10))
+            txt.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            if init_text:
+                txt.insert('1.0', init_text)
+            def _del():
+                if messagebox.askyesno('确认', f'删除内置场景 “{scene_name}”？'):
+                    row.destroy(); builtin_scene_widgets.pop(scene_name, None)
+            ttk.Button(row, text='删除', width=6, command=_del).pack(side=tk.LEFT, padx=4)
+            builtin_scene_widgets[scene_name] = txt
+
+        for sc, val in (self.builtin_scene_prompts or {}).items():
+            _add_builtin_scene_row(sc, val)
+
+        add_builtin_bar = ttk.Frame(builtin_tab)
+        add_builtin_bar.pack(fill=tk.X, padx=8, pady=(0,6))
+        ttk.Label(add_builtin_bar, text='新增场景:').pack(side=tk.LEFT)
+        bt_new_scene_var = tk.StringVar()
+        ttk.Entry(add_builtin_bar, textvariable=bt_new_scene_var, width=16).pack(side=tk.LEFT, padx=6)
+        def _builtin_add_scene():
+            name = bt_new_scene_var.get().strip()
+            if not name:
+                return
+            if name in builtin_scene_widgets:
+                messagebox.showwarning('提示', '场景已存在'); return
+            if len(name) > 20:
+                messagebox.showwarning('提示', '名称过长 (<=20)'); return
+            _add_builtin_scene_row(name)
+            bt_new_scene_var.set('')
+        ttk.Button(add_builtin_bar, text='添加场景', command=_builtin_add_scene).pack(side=tk.LEFT)
+
+        def _fill_user_from_builtin():
+            ut_default_text.delete('1.0', tk.END)
+            ut_default_text.insert('1.0', bt_default_text.get('1.0', tk.END).strip())
+            for sc in list(user_scene_widgets.keys()):
+                user_scene_widgets[sc].master.destroy()
+            user_scene_widgets.clear()
+            for sc, w in builtin_scene_widgets.items():
+                txt = w.get('1.0', tk.END).strip()
+                _add_user_scene_row(sc, txt)
+            status_var.set('已复制内置到用户 (未保存)')
+        ttk.Button(add_builtin_bar, text='复制内置到用户', command=_fill_user_from_builtin).pack(side=tk.LEFT, padx=(10,0))
+
+        # ---------------- 底部操作区 ----------------
+        bottom_bar = ttk.Frame(win)
+        bottom_bar.pack(fill=tk.X, padx=10, pady=(4,2))
+
+        def _reload_from_file():
+            try:
+                if not os.path.exists(self.config_file):
+                    status_var.set('config.json 不存在'); return
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f) or {}
+                p = data.get('prompts', {}) or {}
+                ut_default_text.delete('1.0', tk.END)
+                ut_default_text.insert('1.0', p.get('default',''))
+                for sc in list(user_scene_widgets.keys()):
+                    user_scene_widgets[sc].master.destroy()
+                user_scene_widgets.clear()
+                for sc, val in (p.get('scenes') or {}).items():
+                    _add_user_scene_row(sc, val)
+                bp = data.get('builtin_prompts', {}) or {}
+                bt_default_text.delete('1.0', tk.END)
+                bt_default_text.insert('1.0', bp.get('default',''))
+                for sc in list(builtin_scene_widgets.keys()):
+                    builtin_scene_widgets[sc].master.destroy()
+                builtin_scene_widgets.clear()
+                for sc, val in (bp.get('scenes') or {}).items():
+                    _add_builtin_scene_row(sc, val)
+                status_var.set('已重载')
+            except Exception as e:
+                messagebox.showerror('错误', f'重载失败: {e}')
+
+        def _factory_reset():
+            if not messagebox.askyesno('确认', '恢复出厂默认将重置内置模板，是否继续？'):
+                return
+            bt_default_text.delete('1.0', tk.END)
+            bt_default_text.insert('1.0', self._builtin_default_fallback)
+            for sc in list(builtin_scene_widgets.keys()):
+                builtin_scene_widgets[sc].master.destroy()
+            builtin_scene_widgets.clear()
+            for sc, val in (self._builtin_scenes_fallback or {}).items():
+                _add_builtin_scene_row(sc, val)
+            if messagebox.askyesno('可选操作', '是否同时清空用户自定义提示词？'):
+                ut_default_text.delete('1.0', tk.END)
+                for sc in list(user_scene_widgets.keys()):
+                    user_scene_widgets[sc].master.destroy()
+                user_scene_widgets.clear()
+            status_var.set('已恢复出厂默认 (未保存)')
+
+        def _save_all():
+            user_default = ut_default_text.get('1.0', tk.END).strip()
+            user_scenes = {}
+            for sc, w in user_scene_widgets.items():
+                val = w.get('1.0', tk.END).strip()
+                if val:
+                    user_scenes[sc] = val
+            prompts_payload = {'default': user_default, 'scenes': user_scenes}
+            builtin_default = bt_default_text.get('1.0', tk.END).strip()
+            builtin_scenes = {}
+            for sc, w in builtin_scene_widgets.items():
+                val = w.get('1.0', tk.END).strip()
+                if val:
+                    builtin_scenes[sc] = val
+            builtin_payload = {'default': builtin_default, 'scenes': builtin_scenes}
+            try:
+                cfg = {}
+                if os.path.exists(self.config_file):
+                    with open(self.config_file, 'r', encoding='utf-8') as f:
+                        cfg = json.load(f) or {}
+                cfg['prompts'] = prompts_payload
+                cfg['builtin_prompts'] = builtin_payload
+                with open(self.config_file, 'w', encoding='utf-8') as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                self.prompts = prompts_payload
+                self.builtin_default_prompt = builtin_default
+                self.builtin_scene_prompts = builtin_scenes
+                status_var.set('已保存')
+            except Exception as e:
+                messagebox.showerror('保存失败', str(e))
+
+        def _close():
+            win.destroy()
+
+        ttk.Button(bottom_bar, text='保存全部', command=_save_all).pack(side=tk.LEFT)
+        ttk.Button(bottom_bar, text='恢复出厂默认', command=_factory_reset).pack(side=tk.LEFT, padx=(6,0))
+        ttk.Button(bottom_bar, text='重载', command=_reload_from_file).pack(side=tk.LEFT, padx=(6,0))
+        ttk.Button(bottom_bar, text='关闭', command=_close).pack(side=tk.RIGHT)
+        ttk.Label(win, textvariable=status_var, foreground='green').pack(fill=tk.X, padx=12, pady=(2,6))
+        win.bind('<Escape>', lambda e: _close())
     
     def show_help(self):
         """显示帮助页面"""
@@ -866,6 +1135,7 @@ class VoiceRecognitionGUI:
             self.hotkey_label.config(text=f"快捷键: {self.current_hotkey}")
             # 保存到配置
             self.save_hotkey_config()
+           
             messagebox.showinfo("成功", f"快捷键已更新为: {new_hotkey}")
 
     def on_hotkey_mode_change(self):
@@ -1522,281 +1792,6 @@ class VoiceRecognitionGUI:
         threading.Thread(target=self._play_sound_cached_or_load, args=(which,), daemon=True).start()
 
     # ================== 选中文本润色功能 ==================
-    def _start_mouse_listener(self):
-        """启动鼠标监听，左键释放后尝试捕获当前选中文本并弹出浮层按钮"""
-        def on_click(x, y, button, pressed):
-            try:
-                if not self.enable_selection_refine:
-                    return
-                # 仅在左键释放时处理
-                from pynput.mouse import Button
-                if (not pressed) and button == Button.left:
-                    # 轻微延迟让系统完成选择
-                    self.root.after(80, lambda: self._try_capture_selection_and_show(x, y))
-            except Exception as e:
-                print(f"鼠标监听异常: {e}")
-        try:
-            listener = mouse.Listener(on_click=on_click)
-            listener.daemon = True
-            listener.start()
-        except Exception as e:
-            print(f"启动鼠标监听失败: {e}")
-
-    def _try_capture_selection_and_show(self, x: int, y: int):
-        """尝试获取选中文本并显示浮层"""
-        if self._selection_processing:  # 正在处理上一次
-            return
-        text = self._capture_selection_text()
-        if not text:
-            return
-        # 去除首尾空白
-        s = text.strip()
-        if len(s) < 2:
-            return
-        if len(s) > 2000:  # 过长忽略，避免占用
-            return
-        if s == self._last_selection_text:
-            return
-        self._last_selection_text = s
-        self._show_selection_popup(x, y, s)
-
-    def _capture_selection_text(self) -> str:
-        """通过模拟 Ctrl+C 获取当前选中文本，不改变用户最终剪贴板（尝试恢复）。"""
-        try:
-            old_clip = ""
-            try:
-                old_clip = pyperclip.paste()
-            except Exception:
-                old_clip = ""
-            # 发送复制
-            try:
-                # 设置抑制标志，避免触发双击 Ctrl 逻辑
-                self._suppress_ctrl_listener = True
-                pyautogui.hotkey('ctrl', 'c')
-            except Exception:
-                return ""
-            time.sleep(0.12)  # 等待复制完成
-            try:
-                new_text = pyperclip.paste()
-            except Exception:
-                new_text = ""
-            # 恢复旧剪贴板
-            try:
-                pyperclip.copy(old_clip)
-            except Exception:
-                pass
-            # 延迟恢复抑制标志（确保释放事件也被忽略）
-            self.root.after(160, lambda: setattr(self, '_suppress_ctrl_listener', False))
-            return new_text or ""
-        except Exception as e:
-            print(f"捕获选中文本失败: {e}")
-            # 兜底恢复
-            self._suppress_ctrl_listener = False
-            return ""
-
-    def _show_selection_popup(self, x: int, y: int, text: str):
-        """在鼠标附近显示一个小浮层按钮“AI润色”"""
-        # 销毁已有
-        try:
-            if self._selection_popup and self._selection_popup.winfo_exists():
-                self._selection_popup.destroy()
-        except Exception:
-            pass
-        popup = tk.Toplevel(self.root)
-        self._selection_popup = popup
-        popup.overrideredirect(True)
-        popup.attributes('-topmost', True)
-        popup.attributes('-alpha', 0.95)
-        bg_color = '#222831'
-        popup.configure(bg=bg_color)
-        # 位置微偏移
-        popup.geometry(f"+{x+14}+{y+14}")
-        frame = tk.Frame(popup, bg=bg_color)
-        frame.pack(padx=6, pady=6)
-        btn = tk.Button(frame, text='AI润色', relief='flat', fg='#ffffff', bg='#00a884',
-                        activebackground='#00916e', cursor='hand2',
-                        command=lambda: self._on_selection_refine_click(text))
-        btn.pack()
-        # 自动关闭计时
-        popup.after(6000, lambda: popup.destroy() if popup.winfo_exists() else None)
-
-    def _on_selection_refine_click(self, text: str):
-        """点击浮层按钮后开始处理，并打开结果窗口"""
-        try:
-            if self._selection_popup and self._selection_popup.winfo_exists():
-                self._selection_popup.destroy()
-        except Exception:
-            pass
-        self._open_selection_result_window(original_text=text)
-        self._run_selection_generation(original_text=text)
-
-    def _open_selection_result_window(self, original_text: str):
-        """创建/重置结果窗口：包含 原文预览 + 结果文本框 + 按钮（替换 / 重新生成）"""
-        # 已存在则复用
-        if self._selection_result_window and self._selection_result_window.winfo_exists():
-            win = self._selection_result_window
-            # 清理旧内容
-            try:
-                self._sel_orig_text.config(state='normal')
-                self._sel_orig_text.delete(1.0, tk.END)
-                self._sel_orig_text.insert(tk.END, original_text)
-                self._sel_orig_text.config(state='disabled')
-                self._sel_out_text.delete(1.0, tk.END)
-                self._sel_status_var.set('生成中...')
-            except Exception:
-                pass
-            return
-        win = tk.Toplevel(self.root)
-        self._selection_result_window = win
-        win.title("选中文本润色")
-        win.geometry("760x480")
-        win.attributes('-topmost', True)
-        win.grid_rowconfigure(1, weight=1)
-        win.grid_columnconfigure(0, weight=1)
-        # 顶部状态栏
-        top = ttk.Frame(win)
-        top.grid(row=0, column=0, sticky='ew', padx=8, pady=(8,4))
-        self._sel_status_var = tk.StringVar(value='生成中...')
-        ttk.Label(top, textvariable=self._sel_status_var).pack(side=tk.LEFT)
-        # 主体区（上下分区：原文 + 输出）
-        body = ttk.Frame(win)
-        body.grid(row=1, column=0, sticky='nsew', padx=8, pady=4)
-        body.grid_rowconfigure(0, weight=1)
-        body.grid_rowconfigure(1, weight=1)
-        body.grid_columnconfigure(0, weight=1)
-        # 原文
-        orig_label = ttk.Label(body, text='原文 (只读)', font=('Arial', 10, 'bold'))
-        orig_label.grid(row=0, column=0, sticky='w')
-        self._sel_orig_text = scrolledtext.ScrolledText(body, height=8, wrap=tk.WORD, font=('Consolas', 11))
-        self._sel_orig_text.grid(row=0, column=0, sticky='nsew', pady=(2,10))
-        self._sel_orig_text.insert(tk.END, original_text)
-        self._sel_orig_text.config(state='disabled')
-        # 输出
-        out_label = ttk.Label(body, text='生成结果', font=('Arial', 10, 'bold'))
-        out_label.grid(row=1, column=0, sticky='w')
-        self._sel_out_text = scrolledtext.ScrolledText(body, wrap=tk.WORD, font=('Consolas', 11))
-        self._sel_out_text.grid(row=1, column=0, sticky='nsew', pady=(2,0))
-        # 底部按钮栏
-        btn_bar = ttk.Frame(win)
-        btn_bar.grid(row=2, column=0, sticky='ew', padx=8, pady=(6,10))
-        btn_bar.grid_columnconfigure(0, weight=1)
-        self._sel_replace_btn = ttk.Button(btn_bar, text='替换 (Ctrl+V)', command=self._replace_selection_text, state='disabled')
-        self._sel_replace_btn.pack(side=tk.LEFT)
-        self._sel_regen_btn = ttk.Button(btn_bar, text='重新生成', command=self._regen_selection_text, state='disabled')
-        self._sel_regen_btn.pack(side=tk.LEFT, padx=(8,0))
-        ttk.Button(btn_bar, text='复制结果', command=self._copy_selection_result).pack(side=tk.LEFT, padx=(8,0))
-        ttk.Button(btn_bar, text='关闭', command=win.destroy).pack(side=tk.RIGHT)
-        # ESC 关闭
-        win.bind('<Escape>', lambda e: win.destroy())
-
-    def _build_selection_messages(self, raw_text: str) -> List[Dict[str, str]]:
-        """根据当前语言/场景生成 messages。与语音流程保持一致的风格选择逻辑（简化版本）。"""
-        scene = self.get_smart_template()
-        lang = self.language_mode_var.get()
-        # 选取 system prompt
-        system_prompt = self.builtin_default_prompt
-        try:
-            # 场景自定义优先
-            scene_prompt = self.prompts.get('scenes', {}).get(scene)
-            if scene_prompt:
-                system_prompt = scene_prompt
-            elif self.prompts.get('default'):
-                system_prompt = self.prompts['default']
-            elif scene in self.builtin_scene_prompts:
-                system_prompt = self.builtin_scene_prompts[scene]
-        except Exception:
-            pass
-        # 英语模式附加
-        if lang == '英语':
-            system_prompt += "\n请始终用英文输出，不要包含中文。"
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": raw_text}
-        ]
-        return messages
-
-    def _run_selection_generation(self, original_text: str):
-        """后台线程调用模型生成并更新 UI"""
-        if self._selection_processing:
-            return
-        self._selection_processing = True
-        self._sel_status_var.set('生成中...')
-        self._sel_replace_btn.config(state='disabled')
-        self._sel_regen_btn.config(state='disabled')
-        messages = self._build_selection_messages(original_text)
-        def worker():
-            try:
-                if self.runtime:
-                    resp = self.runtime.llm.generate(messages)
-                elif self._text_generator is not None:
-                    resp = self._text_generator.generate(messages)
-                else:
-                    raise RuntimeError("无可用 LLM 实例")
-                # 解析
-                content = ''
-                try:
-                    content = resp.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '')
-                except Exception:
-                    content = ''
-                if not content:
-                    content = '(空响应)'
-                def update():
-                    if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
-                        return
-                    self._sel_out_text.delete(1.0, tk.END)
-                    self._sel_out_text.insert(tk.END, content)
-                    self._sel_status_var.set('完成')
-                    self._sel_replace_btn.config(state='normal')
-                    self._sel_regen_btn.config(state='normal')
-                self.root.after(0, update)
-            except Exception as e:
-                def fail():
-                    if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
-                        return
-                    self._sel_status_var.set(f'失败: {e}')
-                    self._sel_regen_btn.config(state='normal')
-                self.root.after(0, fail)
-            finally:
-                self._selection_processing = False
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _regen_selection_text(self):
-        """重新生成当前结果窗口内容"""
-        if not (self._selection_result_window and self._selection_result_window.winfo_exists()):
-            return
-        try:
-            orig = self._sel_orig_text.get(1.0, tk.END).strip()
-        except Exception:
-            return
-        if not orig:
-            return
-        self._run_selection_generation(orig)
-
-    def _copy_selection_result(self):
-        try:
-            txt = self._sel_out_text.get(1.0, tk.END).strip()
-            if txt:
-                pyperclip.copy(txt)
-                self._sel_status_var.set('结果已复制')
-        except Exception as e:
-            self._sel_status_var.set(f'复制失败: {e}')
-
-    def _replace_selection_text(self):
-        """将生成结果粘贴到当前光标位置（用户需自行保持原选区焦点）"""
-        try:
-            txt = self._sel_out_text.get(1.0, tk.END).strip()
-            if not txt:
-                return
-            pyperclip.copy(txt)
-            # 粘贴
-            time.sleep(0.05)
-            try:
-                pyautogui.hotkey('ctrl', 'v')
-                self._sel_status_var.set('已替换')
-            except Exception as e:
-                self._sel_status_var.set(f'粘贴失败: {e}')
-        except Exception as e:
-            self._sel_status_var.set(f'异常: {e}')
 
     def _play_sound_cached_or_load(self, which: str):
         if sf is None:
