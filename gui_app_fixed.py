@@ -14,12 +14,12 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import pystray
 from PIL import Image, ImageDraw
-from demo4 import HoldToTalkRecognizer
+from demo4 import HoldToTalkRecognizer  # TODO: 逐步废弃，仅保留兼容
 import keyboard
 import sys
 import re  # 新增: 用于检测输出中是否含有中文字符
-from copywriting_assistant import CopywritingAssistantWindow  # 新增文案助手
-from text_format import TextGenerator  # 语义润色生成
+from text_format import TextGenerator  # 语义润色生成 (将被 services 层替换)
+from services import FlyRecRuntime, ServiceFactory  # 新增: 统一服务层
 from pynput import mouse  # 监听鼠标选择
 import pyautogui  # 复制/粘贴辅助
 import pyperclip  # 读取剪贴板内容
@@ -129,7 +129,19 @@ class VoiceRecognitionGUI:
         self._selection_popup = None
         self._selection_result_window = None
         self._selection_processing = False
-        self._text_generator = TextGenerator()
+        # self._text_generator = TextGenerator()  # 旧直连方式
+        # 初始化统一服务运行时（允许 config.json 中 future 字段控制后端）
+        try:
+            cfg = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as _cf:
+                    cfg = json.load(_cf) or {}
+            self.runtime = FlyRecRuntime.from_config(cfg.get('runtime'))
+            self._text_generator = None  # 使用 runtime.llm
+        except Exception as _rt_e:
+            print(f"初始化服务层失败，回退到直接 TextGenerator: {_rt_e}")
+            self.runtime = None
+            self._text_generator = TextGenerator()
         # 启动鼠标监听（单独线程即可，pynput 自带守护）
         threading.Thread(target=self._start_mouse_listener, daemon=True).start()
         # 抑制 Ctrl 监听（防止程序内部 pyautogui.hotkey 触发双击Ctrl逻辑）
@@ -693,41 +705,15 @@ class VoiceRecognitionGUI:
         self.minimize_to_tray_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(other, text="最小化到系统托盘", variable=self.minimize_to_tray_var).pack(anchor=tk.W)
 
-        # 在设置页面底部空白区域（红框标注位置）添加打开文案助手按钮
-        launch_frame = ttk.Frame(self.content_frame)
-        launch_frame.pack(fill=tk.X, pady=(18,10))
-        ttk.Separator(launch_frame, orient='horizontal').pack(fill=tk.X, pady=(0,8))
-        ttk.Button(launch_frame, text="🪄 打开文案助手", command=self.open_copywriting_assistant, width=20).pack(anchor=tk.W)
+    # 文案助手功能已移除（原位置保留占位，便于未来新增其它扩展按钮）
+    # launch_frame = ttk.Frame(self.content_frame)
+    # launch_frame.pack(fill=tk.X, pady=(18,10))
+    # ttk.Separator(launch_frame, orient='horizontal').pack(fill=tk.X, pady=(0,8))
+    # ttk.Button(launch_frame, text="🪄 打开文案助手", command=self.open_copywriting_assistant, width=20).pack(anchor=tk.W)
 
-    def open_copywriting_assistant(self):
-        """弹出文案助手窗口，传入当前最近识别或当前选中文本作为素材"""
-        # 取最近一次处理后文本作为初始素材
-        initial_text = ""
-        try:
-            if self.transcripts:
-                initial_text = self.transcripts[0].get('formatted') or self.transcripts[0].get('original','')
-        except Exception:
-            initial_text = ""
-
-        # 回调：选择版本后插入到最近转录展示或复制剪贴板
-        def _on_select(text: str):
-            try:
-                import pyperclip
-                pyperclip.copy(text)
-            except Exception:
-                pass
-            # 新建一条临时记录（不计入统计，只方便用户再次查看）
-            transcript = {
-                "timestamp": datetime.now().isoformat(),
-                "original": initial_text or text,
-                "formatted": text,
-                "word_count": len([c for c in text if c.isalnum()])
-            }
-            self.transcripts.insert(0, transcript)
-            self.update_recent_transcripts()
-            self.update_transcripts_display()
-
-        CopywritingAssistantWindow(self.root, initial_text, on_select_callback=_on_select)
+    # def open_copywriting_assistant(self):
+    #     """文案助手功能已移除占位"""
+    #     pass
     # 已移动：智能场景切换复选框在上方场景区域
 
     def save_prompts_from_ui(self):
@@ -1098,7 +1084,15 @@ class VoiceRecognitionGUI:
             
             # 创建识别器（如果不存在）
             if not self.recognizer:
-                self.recognizer = CustomRecognizer(self)
+                # 优先使用 service 层实现
+                if getattr(self, 'runtime', None) and getattr(self.runtime, 'asr', None):
+                    try:
+                        self.recognizer = ServiceRecognizer(self)
+                    except Exception as _sr_e:
+                        print(f"初始化 ServiceRecognizer 失败，回退 CustomRecognizer: {_sr_e}")
+                        self.recognizer = CustomRecognizer(self)
+                else:
+                    self.recognizer = CustomRecognizer(self)
             
             # 开始录音
             self.recognizer.start_session()
@@ -1732,7 +1726,12 @@ class VoiceRecognitionGUI:
         messages = self._build_selection_messages(original_text)
         def worker():
             try:
-                resp = self._text_generator.generate(messages)
+                if self.runtime:
+                    resp = self.runtime.llm.generate(messages)
+                elif self._text_generator is not None:
+                    resp = self._text_generator.generate(messages)
+                else:
+                    raise RuntimeError("无可用 LLM 实例")
                 # 解析
                 content = ''
                 try:
@@ -1974,7 +1973,11 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 print(f"messages: {messages}")
                 
                 try:
-                    formatted = self._format_text.generate(messages)
+                    # 优先使用统一服务层 LLM
+                    if getattr(self.gui_app, 'runtime', None):
+                        formatted = self.gui_app.runtime.llm.generate(messages)
+                    else:
+                        formatted = self._format_text.generate(messages)
                     if formatted:
                         formatted_content = formatted.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
                         # 若是英语模式，检查是否仍含有中文字符，若有则重试一次
@@ -1989,7 +1992,10 @@ class CustomRecognizer(HoldToTalkRecognizer):
                                 {"role": "user", "content": final_text}
                             ]
                             try:
-                                retry_resp = self._format_text.generate(retry_messages)
+                                if getattr(self.gui_app, 'runtime', None):
+                                    retry_resp = self.gui_app.runtime.llm.generate(retry_messages)
+                                else:
+                                    retry_resp = self._format_text.generate(retry_messages)
                                 if retry_resp:
                                     retry_content = retry_resp.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
                                     if retry_content and not re.search(r'[\u4e00-\u9fff]', retry_content):
@@ -2066,6 +2072,137 @@ class CustomRecognizer(HoldToTalkRecognizer):
             except Exception:
                 continue
         return text, hits
+
+# ================= ServiceRecognizer 基于统一 service 层 =================
+class ServiceRecognizer:
+    """使用 services.FlyRecRuntime 中的 ASR + LLM，复用 GUI 现有回调逻辑。
+
+    对外暴露 start_session / stop_session，与旧 CustomRecognizer 接口保持一致，
+    便于 GUI 代码最小改动。"""
+    def __init__(self, gui_app: 'VoiceRecognitionGUI'):
+        if not getattr(gui_app, 'runtime', None):
+            raise RuntimeError('runtime 未初始化')
+        self.gui_app = gui_app
+        # 运行时组件（加入显式检查，避免类型分析告警）
+        runtime = gui_app.runtime
+        if runtime is None or not hasattr(runtime, 'asr') or not hasattr(runtime, 'llm'):
+            raise RuntimeError('runtime 不完整，缺少 asr/llm')
+        self.asr = runtime.asr  # type: ignore[attr-defined]
+        self.llm = runtime.llm  # type: ignore[attr-defined]
+        self.start_time = None
+        # 绑定可选流式回调（目前只打印，可扩展为实时显示）
+        try:
+            self.asr.on_partial(self._on_partial)
+        except Exception:
+            pass
+
+    def _on_partial(self, piece: str):
+        # 预留：可实现实时 UI 更新 (例如在录音指示窗口展示临时文本)
+        # print(f"[partial] {piece}")
+        pass
+
+    def start_session(self):
+        import time
+        if self.asr.is_running():
+            return
+        self.start_time = time.time()
+        self.asr.start()
+
+    def stop_session(self):
+        if not self.asr.is_running():
+            return
+        result = self.asr.stop()
+        final_text = result.get('text', '')
+        if not final_text:
+            print('No final recognition result.')
+            self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete('', '', 0))
+            return
+
+        # 录音时长
+        duration = result.get('duration') or 0
+        self.gui_app.last_recording_duration = int(duration)
+
+        # 场景与语言
+        template_name = self.gui_app.get_smart_template()
+        lang_mode = self.gui_app.language_mode_var.get()
+        print(f"[ServiceRecognizer] 模式: {lang_mode}, 场景: {template_name}")
+
+        # 用户词典替换
+        processed_for_model = final_text
+        try:
+            if hasattr(self.gui_app, 'user_dict') and isinstance(self.gui_app.user_dict, dict):
+                processed_for_model, dict_hits = CustomRecognizer._apply_user_dictionary(self=CustomRecognizer(self.gui_app), text=processed_for_model, mapping=self.gui_app.user_dict)  # 临时复用逻辑
+                if dict_hits:
+                    hits_str = '; '.join([f"{s}->{d}({c})" for s, d, c in dict_hits])
+                    print(f"用户词典替换明细: {hits_str}")
+        except Exception as dic_e:
+            print(f"用户词典应用失败: {dic_e}")
+
+        # system prompt 选择
+        try:
+            prompts_cfg = getattr(self.gui_app, 'prompts', {}) or {}
+            scenes_cfg = prompts_cfg.get('scenes', {}) if isinstance(prompts_cfg, dict) else {}
+            user_default = prompts_cfg.get('default')
+            if template_name in scenes_cfg and scenes_cfg.get(template_name):
+                system_prompt = str(scenes_cfg.get(template_name))
+            elif user_default:
+                system_prompt = str(user_default)
+            elif template_name in getattr(self.gui_app, 'builtin_scene_prompts', {}):
+                system_prompt = str(self.gui_app.builtin_scene_prompts.get(template_name))
+            else:
+                system_prompt = str(getattr(self.gui_app, 'builtin_default_prompt', ''))
+        except Exception:
+            system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
+
+        if lang_mode in ('英语', '外语', '英文', 'English') and isinstance(system_prompt, str):
+            english_enforcer = (
+                "IMPORTANT: You must output ONLY English text.\n"
+                "Task: Understand the user's spoken intent (may be Chinese) and produce a concise, natural English sentence or short paragraph conveying exactly the same meaning.\n"
+                "Rules:\n1. Do NOT include ANY Chinese characters.\n2. Preserve key factual details.\n3. No explanations.\n4. If already English, lightly polish.\n5. Output only English text."
+            )
+            system_prompt = system_prompt.strip() + "\n" + english_enforcer
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": processed_for_model}
+        ]
+
+        try:
+            formatted = self.llm.generate(messages)
+            formatted_content = formatted.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '') if formatted else ''
+            # 英语重试
+            import re as _re
+            if lang_mode in ('英语', '外语', '英文', 'English') and _re.search(r'[\u4e00-\u9fff]', formatted_content):
+                retry_messages = [
+                    {"role": "system", "content": "Output ONLY English. Translate and refine."},
+                    {"role": "user", "content": final_text}
+                ]
+                try:
+                    retry_resp = self.llm.generate(retry_messages)
+                    retry_content = retry_resp.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '')
+                    if retry_content and not _re.search(r'[\u4e00-\u9fff]', retry_content):
+                        formatted_content = retry_content
+                except Exception as _re_e:
+                    print(f"英文回退失败: {_re_e}")
+        except Exception as e:
+            print(f"格式化失败: {e}")
+            formatted_content = final_text
+
+        if hasattr(self.gui_app, 'auto_paste_var') and self.gui_app.auto_paste_var.get():
+            try:
+                import pyperclip, pyautogui, time as _t
+                pyperclip.copy(formatted_content)
+                _t.sleep(0.1)
+                pyautogui.hotkey('ctrl', 'v')
+            except Exception as _pe:
+                print(f"自动粘贴失败: {_pe}")
+
+        word_count = len([c for c in final_text if c.isalnum()])
+        self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete(final_text, formatted_content, word_count))
+
+    # 兼容旧接口
+    def is_running(self):
+        return self.asr.is_running()
             
 if __name__ == "__main__":
     app = VoiceRecognitionGUI()

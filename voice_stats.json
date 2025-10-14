@@ -1,7 +1,7 @@
 {
-  "total_words": 2928,
-  "total_time": 1040,
-  "sessions_count": 120,
+  "total_words": 2991,
+  "total_time": 1059,
+  "sessions_count": 121,
   "last_30_days": [
     {
       "date": "2025-10-06",
@@ -27,6 +27,11 @@
       "date": "2025-10-13",
       "words": 60,
       "sessions": 2
+    },
+    {
+      "date": "2025-10-14",
+      "words": 63,
+      "sessions": 1
     }
   ]
 }
