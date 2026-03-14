@@ -6,5 +6,30 @@ dist/
 wheels/
 *.egg-info
 
+# Type check / test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
 # Virtual environments
-.venv
+.venv/
+
+# Local runtime data (DO NOT COMMIT)
+config.json
+transcripts.json
+voice_stats.json
+user_dictionary.json
+voice_data_export_*.json
+*.log
+
+# Local screenshots
+assets/Screenshot_*.png
+
+# Local secrets
+.env

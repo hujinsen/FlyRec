@@ -40,7 +40,7 @@ excludes = [
 ]
 
 analysis = Analysis(
-    ['gui_app_fixed.py'],
+    ['flyrec_gui.py'],
     pathex=[],
     binaries=[],
     datas=datas,

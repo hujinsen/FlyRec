@@ -10,6 +10,7 @@ dependencies = [
     "flask>=3.1.2",
     "keyboard>=0.13.5",
     "pillow>=11.3.0",
+    "python-dotenv>=1.0.1",
     "psutil>=7.1.0",
     "pyaudio>=0.2.14",
     "pyautogui>=0.9.54",

@@ -149,13 +149,18 @@ class DashScopeASR(ASRService):
             self._results = []
         self._running = True
         self._start_time = time.time()
-        self._audio_thread = threading.Thread(target=self._audio_loop, daemon=True).start()
+        self._audio_thread = threading.Thread(target=self._audio_loop, daemon=True)
+        self._audio_thread.start()
 
     def stop(self) -> ASRResult:
         if not self._running:
             return ASRResult(text="", segments=[], duration=0.0)
         self._running = False
-        if self._audio_thread and isinstance(self._audio_thread, threading.Thread):
+        if self._audio_thread:
+            try:
+                self._audio_thread.join(timeout=1.0)
+            except Exception:
+                pass
             self._audio_thread = None
         if self._recognition:
             try: self._recognition.stop()

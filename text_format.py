@@ -26,6 +26,16 @@ import os
 from dashscope import Generation
 import dashscope
 
+# 支持从 .env 文件加载环境变量（优先加载脚本同目录的 .env）
+try:
+    from dotenv import load_dotenv  # type: ignore
+    _base_dir = os.path.dirname(__file__)
+    _env_path = os.path.join(_base_dir, '.env')
+    if os.path.exists(_env_path):
+        load_dotenv(dotenv_path=_env_path, override=False)
+except Exception:
+    pass
+
 # 如果使用新加坡(region)的模型，请取消下面注释以切换API地址
 # dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
 
@@ -108,7 +118,9 @@ if __name__ == "__main__":
     {"role": "user", "content": "帮我实现一个简单的文本比较功能，输入两个文本，输出两个文本的相似度，相似度大于0.5时输出相似，否则输出不相似。"},
 ]
 
-    gen = TextGenerator(api_key="sk-2d627fbbc4fa491db207c632a77f2852")
+    # 建议通过环境变量 DASHSCOPE_API_KEY 提供 Key。
+    # gen = TextGenerator(api_key=os.getenv("DASHSCOPE_API_KEY"))
+    gen = TextGenerator(api_key="<YOUR_DASHSCOPE_API_KEY>")
     try:
         out = gen.generate(CODE_MESSAGE)
         print("调用成功，响应内容：")

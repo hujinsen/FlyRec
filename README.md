@@ -1,167 +1,134 @@
-## FlyRec - 语音→可用文本效率工具
+# FlyRec
 
-按下快捷键，说完就得到结构化/场景化处理后的文本，并自动粘贴到你正在输入的窗口。（原“选中文本即时润色”功能已下线）
+FlyRec 是一个 Windows 桌面效率工具：按下快捷键开始说话，结束后自动得到“可直接粘贴使用”的文本（可按聊天/邮件/代码等场景做轻量润色），并自动粘贴到当前光标位置。
 
-### 核心价值
-| 诉求 | 传统方式 | FlyRec | 收益 |
-|------|----------|--------|------|
-| 快速输入 | 手打慢 | 语音即文本 | 节省时间 |
-| 可直接使用 | 回听+整理 | 自动格式/风格适配 | 减少后处理 |
-| 多场景切换 | 手动调风格 | 智能识别窗口 | 降低心智负担 |
-| 专有名词 | 易错/口误 | 用户词典替换 | 输出更稳定 |
+> 说明：仓库当前版本不包含“选中文本即时润色”的浮动按钮功能。
 
----
-### 功能概览（基于当前代码实现，未夸大）
-1. 双模式快捷键：
-   - 按住模式：按住 `Ctrl+Space`（可自定义）录音，松开结束。
-   - 双击 Ctrl：双击开始，再按一次结束（默认间隔 ≤0.5s）。
-2. 实时语音识别：调用 DashScope `fun-asr-realtime`，结束后拼接句段。
-3. 场景/风格：文本 / 聊天 / 邮件 / 代码，可手动或智能自动（依据活动进程名/窗口标题）。
-4. 输出语言：中文或英语；英语模式附加强制英文规则并检测重试。
-5. 文本生成与优化：使用 `qwen-plus` 模型，根据 system + user messages 输出。
-6. 用户词典：发送到模型前按“原词→替换”为顺序匹配（长词优先），打印替换明细。
-7. 自动粘贴：生成后复制剪贴板并模拟 `Ctrl+V`。
-8. 历史记录：本地保存（原文/处理后/时间/字数），支持搜索、详情查看、复制。
-9. 统计：总字数、录音累计时长、平均 CPM（字符/分钟），最近 30 天聚合（内部维护）。
-10. 录音指示：浮层提示 + 开始/结束音效（使用 wav + 预加载缓存）。
-11. 系统托盘：关闭窗口默认隐藏到托盘，可右键显示/退出。
-12. 数据持久化：JSON 文件（`config.json`, `transcripts.json`, `voice_stats.json`, `user_dictionary.json`）。
+## 功能（以当前代码为准）
 
----
-### 安装依赖
-推荐使用 `pyproject.toml`：
+- 全局快捷键录音
+   - `hold`：按住快捷键开始，松开结束
+   - `double_ctrl`：双击 Ctrl 开始，录音中再按一次 Ctrl 结束（默认间隔 ≤0.5s）
+- 在线实时语音识别：DashScope ASR（默认 `fun-asr-realtime`），结束后合并分段
+- 场景提示词：文本/聊天/邮件/代码（可手动选择，或根据活动窗口自动切换）
+- 输出语言：中文/英语（英语模式会附加英文输出约束，并做一次“含中文则重试”）
+- 文本生成/润色：DashScope Qwen（默认 `qwen-plus`）
+- 用户词典：模型调用前做“长词优先”的字符串替换
+- 自动粘贴：复制到剪贴板并模拟 `Ctrl+V`
+- 本地记录与统计：`transcripts.json`、`voice_stats.json`
+- 录音提示：浮层提示 + 开始/结束 wav 音效（`assets/*.wav`）
+- 托盘运行：关闭窗口默认最小化到托盘
+
+## 界面预览
+
+（截图位于 `assets/screenshots/`）
+
+![FlyRec 界面截图 1](assets/screenshots/app-01.png)
+
+![FlyRec 界面截图 2](assets/screenshots/app-02.png)
+
+![FlyRec 界面截图 3](assets/screenshots/app-03.png)
+
+![FlyRec 界面截图 4](assets/screenshots/app-04.png)
+
+## 环境要求
+
+- Windows 10/11（智能场景切换依赖 Windows API）
+- Python ≥ 3.10
+- 麦克风权限
+- DashScope API Key（需要联网调用语音识别与大模型）
+
+## 快速开始
+
+### 1) 安装依赖
+
+在项目根目录：
+
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
 pip install .
 ```
-或手动：
+
+如果你在新建的虚拟环境中遇到 `No module named pip`，可先执行：
+
 ```powershell
-pip install dashscope pyaudio pyautogui pyperclip keyboard pystray pillow sounddevice soundfile psutil
+python -m ensurepip --upgrade
+python -m pip install -U pip
 ```
-（说明：当前版本实际使用 `sounddevice+soundfile` 播放 wav；旧文档中的 playsound/mp3 已移除。）
 
-### 启动
+备注：`pyaudio` 在 Windows 上如果安装失败，通常是缺少编译环境/不匹配的 wheel。优先尝试更换 Python 版本（3.10/3.11）或使用可用的预编译 wheel/conda 方案。
+
+### 2) 配置 DashScope Key
+
+推荐使用 `.env` 文件（最省事，且不污染系统环境变量）：
+
+1) 复制示例文件：
+
 ```powershell
-python gui_app_fixed.py
+Copy-Item .env.example .env
 ```
-首次运行会在同目录生成配置与数据文件。
 
-### 设置 API Key
-在环境变量或代码中设置：
+2) 编辑 `.env`，填入：
+
+```ini
+DASHSCOPE_API_KEY=<你的_DashScope_Key>
+```
+
+或使用环境变量：
+
 ```powershell
-$Env:DASHSCOPE_API_KEY="你的Key"
+$Env:DASHSCOPE_API_KEY = "<你的_DashScope_Key>"
 ```
-或编辑 `demo4.py`/`text_format.py` 传入（不推荐硬编码）。
 
----
-### 快速上手（用户视角）
-1. 打开程序 → 进入“设置”选择：语言 / 场景 / 是否启用智能场景 / 自动粘贴。
-2. 选“按住模式”或“双击 Ctrl”模式。
-3. 聚焦到任何输入框（聊天/邮件/IDE）。
-4. 触发快捷键，说话，松开或再按结束。
-5. 几秒后处理文本自动粘贴。
-6. 在“转录记录”查看详情或复制。
-7. 在“词典”添加专有词规范。
+安全提示：不要把 Key 写进代码或提交到仓库。
 
----
-### 英语模式特殊逻辑
-1. system prompt 附加英文输出强制规则。
-2. 若检测到模型输出仍含中文字符，触发一次英文回退消息重试。
-3. 第二次仍失败则保留原内容（避免陷入循环）。
+### 2.5) 准备本地配置（推荐）
 
-### 智能场景切换（示例映射）
-| 进程/标题包含 | 场景 | 说明 |
-|---------------|------|------|
-| wechat / qq / 钉钉 | 聊天 | 聊天语气优化 |
-| outlook / mail / foxmail | 邮件 | 正式、礼貌、结构化 |
-| code / pycharm / idea | 代码 | 保留技术语义、口语→清晰描述 |
-| 其它 | 文本 | 普通精炼描述 |
+本仓库会忽略本地运行配置与数据文件（避免把个人转录/统计/导出推送到公开仓库）。
 
-### 用户词典机制
-| 阶段 | 作用 |
-|------|------|
-| 识别结束后 | 将识别结果按从长到短顺序做纯字符串替换 |
-| 发送前 | 替换后的文本进入模型 prompt |
-| 保存记录 | 原文与处理后分别存储（原文不篡改） |
+首次运行前建议复制示例文件：
 
----
-### 数据文件说明
-| 文件 | 内容 |
-|------|------|
-| config.json | 快捷键、模式、输出语言、提示词结构 |
-| transcripts.json | 转录历史（数组） |
-| voice_stats.json | 累计统计与最近30天聚合 |
-| user_dictionary.json | 词典映射 |
-
----
-### FAQ
-Q: 一定要联网吗？  
-A: 是，需要在线语音识别和文本生成。  
-Q: 原始音频会保存本地吗？  
-A: 不会，只实时采集并发送，结束即释放。  
-Q: 英语模式为什么偶尔仍有中文？  
-A: 已做一次检测+回退重试，属于模型输出特例。  
-Q: 智能场景没反应？  
-A: 需 Windows 且安装 `pywin32`；不支持的进程名称会回退到手动场景。  
-Q: 统计字数为何与“词”不同？  
-A: 当前实现按字母/数字字符计数（中文视作字数近似），并用此估 CPM。  
-Q: 想自定义提示词？  
-A: 当前 UI 按钮为预留，可直接修改 `config.json -> prompts` 后重启。  
-Q: 声音没播放？  
-A: 安装 `soundfile`，并确保 `assets/start_rec.wav` / `end_rec.wav` 存在。  
-
----
-### 与旧文档差异修正
-| 旧描述 | 当前真实情况 |
-|--------|--------------|
-| playsound 播放 mp3 | 现用 sounddevice + soundfile 播放 wav 并预加载缓存 |
-| 代码模板直接生成代码 | 代码场景侧重“表达清晰化”，不自动写代码 |
-| 多模板完全可自定义 | 自定义编辑入口尚未实现，使用内置 + config.json |
-| 全平台托盘统一可用 | 代码中使用 pywin32 获取活动窗口（主要验证于 Windows） |
-
----
-### 开发/结构速览
-| 文件 | 作用 |
-|------|------|
-| gui_app_fixed.py | 主 GUI 应用（快捷键/场景/统计/托盘/音效） |
-| demo4.py | 基础识别封装（DashScope ASR 会话） |
-| text_format.py | 大模型生成封装（Qwen 文本生成） |
-| services.py | 新增统一 Service 层：ASR/LLM 抽象与工厂，支持 DashScope / Dummy 后端 |
-| FlyRecApp.spec | PyInstaller 打包配置 |
-| assets/ | 音效资源（wav） |
-
----
-### 打包（PyInstaller 目录模式）
 ```powershell
-pyinstaller .\FlyRecApp.spec
+Copy-Item config.example.json config.json
+Copy-Item user_dictionary.example.json user_dictionary.json
+Copy-Item transcripts.example.json transcripts.json
+Copy-Item voice_stats.example.json voice_stats.json
 ```
-输出位于 `dist/FlyRecApp/`，包含 exe、依赖与资源。
 
-常见问题：
-| 现象 | 说明 |
-|------|------|
-| 首次启动慢 | 动态库加载正常现象 |
-| 粘贴失败 | 目标应用拦截模拟输入或失焦，确保前台窗口 | 
-| 无托盘/智能场景 | 缺少 pywin32，安装后重启 |
+### 3) 启动
 
----
-### 将来可迭代方向（建议）
-1. 自定义提示词 UI & 导入导出。
-2. 本地/离线识别（Whisper 等）备选。
-3. 历史记录标签/收藏/多维筛选。
-4. Markdown / 批量导出 / 一键复制格式化摘要。
-5. 统计图表（活跃度、场景分布）。
-6. 连续长时录音自动分段 + 实时流式显示。
-7. 更智能的语言自动检测与中英文混排优化。
+```powershell
+python flyrec_gui.py
+```
 
----
-### Service 层说明（新增）
-`services.py` 引入统一抽象：
- - ASRService: start/stop/is_running/on_partial
- - LLMService: generate/simple_refine
- - FlyRecRuntime: 从配置构造组合 (runtime.asr / runtime.llm)
+首次运行会在根目录生成/更新本地数据文件（如 `transcripts.json`、`voice_stats.json`）。
 
-配置示例（`config.json` 可新增 `runtime` 字段）：
-```jsonc
+## 使用方式（用户视角）
+
+1. 打开程序，在“设置”里选择快捷键模式、输出语言、场景、是否启用智能模板切换、是否自动粘贴
+2. 聚焦到任意输入框（聊天/邮件/IDE 等）
+3. 触发快捷键开始说话，结束后等待数秒
+4. 文本会自动粘贴到当前光标处，可在“转录记录”查看历史
+5. 在“词典”中维护专有名词/固定写法
+
+## 配置说明（config.json）
+
+`config.json` 视为本地文件（已在 `.gitignore` 中忽略）。请基于 `config.example.json` 生成。
+
+常用字段：
+
+- `hotkey`：按住模式的组合键（例如 `ctrl+space`、`ctrl+win`）
+- `hotkey_mode`：`hold` 或 `double_ctrl`
+- `output_language`：`中文` 或 `英语`
+- `prompts`：自定义提示词
+   - `default`：默认 system prompt
+   - `scenes`：场景提示词（如 `聊天`/`邮件`/`代码`）
+
+可选字段（用于 services 层后端切换）：
+
+```json
 {
    "runtime": {
       "asr": { "backend": "dashscope", "model": "fun-asr-realtime" },
@@ -169,8 +136,10 @@ pyinstaller .\FlyRecApp.spec
    }
 }
 ```
-离线/占位（开发/无网）可设置：
-```jsonc
+
+离线/联调（不调用真实 API）可使用 dummy：
+
+```json
 {
    "runtime": {
       "asr": { "backend": "dummy" },
@@ -178,15 +147,70 @@ pyinstaller .\FlyRecApp.spec
    }
 }
 ```
-Dummy 后端仅返回模拟文本，用于界面联调，不调用真实 API。
 
----
-### 许可证
-本项目用于学习与个人效率提升。使用 DashScope 服务需遵守其服务条款。
+## 智能模板切换（Windows）
 
----
-### 快速摘要（可复制到介绍页）
-FlyRec：按下快捷键开始说话，结束即得处理后的文本（支持聊天/邮件/代码场景与智能切换），自动粘贴到当前光标位置；内置用户词典、历史记录与统计，全程本地保存结果数据；不再包含“选中即润色”浮动按钮功能。
+FlyRec 会在开始录音时读取当前前台窗口的进程名/标题，并在“聊天/邮件/代码/文本”之间自动切换场景提示词。
 
----
-（文档已根据 2025-10 当前仓库代码同步校准。）
+- 依赖：`psutil` + `pywin32`
+- 映射表：在 `flyrec_gui.py` 的 `app_template_mapping`
+- 说明文档：`智能模板切换功能说明.md`
+
+## 数据文件
+
+- `config.json`：快捷键、模式、语言、提示词等配置（本地文件，勿提交）
+- `transcripts.json`：识别/润色历史记录（本地文件，勿提交）
+- `voice_stats.json`：累计统计与近 30 天聚合（本地文件，勿提交）
+- `user_dictionary.json`：用户词典（原词 → 替换）（本地文件，勿提交）
+
+仓库中提供对应的示例文件：
+
+- `config.example.json`
+- `transcripts.example.json`
+- `voice_stats.example.json`
+- `user_dictionary.example.json`
+
+## 打包（PyInstaller）
+
+目录模式（onedir）：
+
+```powershell
+pyinstaller .\FlyRecApp.spec
+```
+
+产物通常在 `dist/FlyRecApp/`（具体以 PyInstaller 输出为准）。
+
+## 测试脚本（手工验证）
+
+本仓库测试以脚本为主（非 pytest 套件）：
+
+```powershell
+python test_smart_template.py
+python test_hotkey_modes.py
+python test_recording_indicator.py
+```
+
+说明：
+- `test_hotkey_modes.py` 需要手动按键验证（会等待按键退出）。
+
+## 常见问题
+
+- 智能场景不生效：确认已安装 `psutil`/`pywin32`，且前台窗口确实在切换
+- 无法自动粘贴：部分应用会拦截模拟输入；确保目标窗口在前台、光标在输入框
+- 无音效：确认 `assets/start_rec.wav` 与 `assets/end_rec.wav` 存在，且已安装 `soundfile`
+- Key 不生效：确认已设置 `DASHSCOPE_API_KEY`，且没有在本地源码中写死覆盖
+
+## 目录结构速览
+
+- `flyrec_gui.py`：主 GUI（快捷键、场景、统计、托盘、音效）
+- `flyrec/`：可复用核心模块（环境加载、智能场景、词典替换、识别器对接等）
+- `services.py`：ASR/LLM 抽象与工厂（DashScope / Dummy）
+- `legacy_hold_to_talk.py`：早期识别封装（兼容保留，逐步替换）
+- `text_format.py`：Qwen 文本生成封装
+- `FlyRecApp.spec`：PyInstaller 打包配置
+- `assets/`：音效资源（wav）
+- `CONTRIBUTING.md`：贡献指南（开发/风格/提交前检查）
+
+## 许可证
+
+本项目用于学习与个人效率提升。使用 DashScope 服务请遵守其服务条款。

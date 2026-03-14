@@ -1,21 +1,31 @@
+"""Legacy 识别脚本（兼容保留）。
+
+说明：
+- 该文件最初用于验证“按住说话 + DashScope ASR + 生成润色 + 自动粘贴”的流程。
+- 新代码建议优先走 services.py 的统一服务层（便于替换/Mock/配置化）。
+"""
+
+from __future__ import annotations
+
 import os
-import signal  # for keyboard events handling (press "Ctrl+C" to terminate recording)
-import sys
-import threading
-import time
-import os
-import signal  # for keyboard events handling (press "Ctrl+C" to terminate recording)
+import signal
 import sys
 import threading
 import time
 
 import dashscope
 import pyaudio
+import pyautogui
+import pyperclip
 from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
 from pynput import keyboard
+
+from flyrec.env import load_dotenv_next_to
 from text_format import TextGenerator
-import pyperclip
-import pyautogui
+
+
+# 支持从 .env 文件加载环境变量（优先加载脚本同目录的 .env）
+load_dotenv_next_to(__file__, override=False)
 # Set recording parameters
 SAMPLE_RATE = 16000  # sampling rate (Hz)
 CHANNELS = 1  # mono channel
@@ -33,7 +43,7 @@ CHAT_MESSAGE = [
     {"role": "user", "content": "待定义"},
 ]
 EMAIL_MESSAGE = [
-    {"role": "system", "content": "你是邮件助手，能够对邮件内容进行润色。我的个人信息如下：姓名：胡进森，邮箱是：<hujsen@163.com>,电话是：13290818863，个人网站是：https://hujinsen.github.io/。"},
+    {"role": "system", "content": "你是邮件助手，能够对邮件内容进行润色。"},
     {"role": "user", "content": "待定义"},
 ]
 
@@ -44,10 +54,12 @@ CODE_MESSAGE = [
 
 def init_dashscope_api_key():
     """Set DashScope API key from environment or inline value."""
-    if 'DASHSCOPE_API_KEY' in os.environ:
-        dashscope.api_key = os.environ['DASHSCOPE_API_KEY']
-    else:
-        dashscope.api_key = 'sk-2d627fbbc4fa491db207c632a77f2852'
+    dashscope.api_key = os.getenv('DASHSCOPE_API_KEY')
+    if not dashscope.api_key:
+        raise RuntimeError(
+            "缺少 DASHSCOPE_API_KEY。请先设置环境变量，例如："
+            "PowerShell: $Env:DASHSCOPE_API_KEY=\"<你的Key>\""
+        )
 
 
 class HoldToTalkRecognizer:

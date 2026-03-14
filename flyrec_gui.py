@@ -14,23 +14,22 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import pystray
 from PIL import Image, ImageDraw
-from demo4 import HoldToTalkRecognizer  # TODO: 逐步废弃，仅保留兼容
 import keyboard
 import sys
-import re  # 新增: 用于检测输出中是否含有中文字符
 from text_format import TextGenerator  # 语义润色生成 (将被 services 层替换)
 from services import FlyRecRuntime, ServiceFactory  # 新增: 统一服务层
 from pynput import mouse  # 监听鼠标选择
 import pyautogui  # 复制/粘贴辅助
 import pyperclip  # 读取剪贴板内容
 
-import psutil
-try:
-    import win32gui
-    import win32process
-    SMART_TEMPLATE_AVAILABLE = True
-except ImportError:
-    print("win32gui 和 win32process 模块未安装，将无法使用系统托盘")
+from flyrec.env import load_dotenv_next_to
+from flyrec.smart_template import (
+    SMART_TEMPLATE_AVAILABLE,
+    DEFAULT_APP_SCENE_MAPPING,
+    get_active_window_process as _get_active_window_process,
+    suggest_scene as _suggest_scene,
+)
+from flyrec.recognizers import CustomRecognizer, ServiceRecognizer
 
 # 导入播放音效库（新增）
 import sounddevice as sd
@@ -41,7 +40,11 @@ except ImportError:
     print("缺少 soundfile 库，音效功能不可用。安装: uv add soundfile  或  pip install soundfile")
 
 
-os.environ['DASHSCOPE_API_KEY'] =  'sk-2d627fbbc4fa491db207c632a77f2852'
+# 注意：不要在源码中硬编码 DASHSCOPE_API_KEY。
+# 请通过环境变量设置：$Env:DASHSCOPE_API_KEY="..."
+
+# 支持从 .env 文件加载环境变量（优先加载脚本同目录的 .env）
+load_dotenv_next_to(__file__, override=False)
 
 class VoiceRecognitionGUI:
     """语音识别工具图形界面"""
@@ -129,42 +132,7 @@ class VoiceRecognitionGUI:
         self._suppress_ctrl_listener = False
         
         # 应用程序模板映射
-        self.app_template_mapping = {
-            # 聊天应用
-            'wechat.exe': '聊天',
-            'qq.exe': '聊天', 
-            'qqscm.exe': '聊天',
-            'dingtalk.exe': '聊天',
-            'teams.exe': '聊天',
-            'slack.exe': '聊天',
-            'telegram.exe': '聊天',
-            'discord.exe': '聊天',
-            
-            # 邮件应用
-            'outlook.exe': '邮件',
-            'thunderbird.exe': '邮件',
-            'foxmail.exe': '邮件',
-            'mailmaster.exe': '邮件',
-            
-            # 代码编辑器
-            'code.exe': '代码',
-            'devenv.exe': '代码',
-            'pycharm64.exe': '代码',
-            'idea64.exe': '代码',
-            'notepad++.exe': '代码',
-            'sublime_text.exe': '代码',
-            'atom.exe': '代码',
-            'webstorm64.exe': '代码',
-            'phpstorm64.exe': '代码',
-            'codebuddy.exe': '代码',  # 添加CodeBuddy支持
-            
-            # 默认应用
-            'notepad.exe': '默认',
-            'wordpad.exe': '默认',
-            'winword.exe': '默认',
-            'excel.exe': '默认',
-            'powerpnt.exe': '默认',
-        }
+        self.app_template_mapping = dict(DEFAULT_APP_SCENE_MAPPING)
         
         # 创建界面
         self.create_widgets()
@@ -721,7 +689,7 @@ class VoiceRecognitionGUI:
             ),
             '代码': (
                 "用户正在编写代码，有问题想问你，但是你不用回答，只需要将问题文本进行润色：\n"
-                "- 用户如果说文件名或代码行号，保留这些信息（若说 demo4 点 py 输出 demo4.py）\n"
+                "- 用户如果说文件名或代码行号，保留这些信息（例如：若说 legacy hold to talk 点 py，则输出 legacy_hold_to_talk.py）\n"
                 "- 保留原本语气（口语/轻松）\n- 修正明显错别字与语序\n- 只输出润色后的文本，不加前缀或说明。"
             )
         }
@@ -1280,32 +1248,7 @@ class VoiceRecognitionGUI:
     
     def get_active_window_process(self):
         """获取当前活动窗口的进程信息"""
-        if not SMART_TEMPLATE_AVAILABLE:
-            return None, None
-            
-        try:
-            # 获取前台窗口句柄
-            hwnd = win32gui.GetForegroundWindow()
-            if hwnd == 0:
-                return None, None
-            
-            # 获取窗口标题
-            window_title = win32gui.GetWindowText(hwnd)
-            
-            # 获取进程ID
-            _, process_id = win32process.GetWindowThreadProcessId(hwnd)
-            
-            # 获取进程信息
-            try:
-                process = psutil.Process(process_id)
-                process_name = process.name().lower()
-                return process_name, window_title
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                return None, window_title
-                
-        except Exception as e:
-            print(f"获取活动窗口信息失败: {e}")
-            return None, None
+        return _get_active_window_process()
     
     def get_smart_template(self):
         """根据当前活动窗口智能选择场景 (不含语言模式)"""
@@ -1313,30 +1256,15 @@ class VoiceRecognitionGUI:
             return self.template_scene_var.get()
         
         process_name, window_title = self.get_active_window_process()
-        
-        if process_name:
-            # 检查进程名映射
-            if process_name in self.app_template_mapping:
-                template = self.app_template_mapping[process_name]
-                print(f"检测到应用: {process_name}, 自动切换场景: {template}")
-                if template == '默认':
-                    template = '文本'
-                return template
-            
-            # 检查窗口标题关键词
-            if window_title:
-                title_lower = window_title.lower()
-                if any(keyword in title_lower for keyword in ['微信', 'wechat', 'qq', '钉钉']):
-                    print(f"检测到聊天窗口: {window_title}, 切换到聊天场景")
-                    return '聊天'
-                elif any(keyword in title_lower for keyword in ['邮件', 'mail', 'outlook', '邮箱']):
-                    print(f"检测到邮件窗口: {window_title}, 切换到邮件场景")
-                    return '邮件'
-                elif any(keyword in title_lower for keyword in ['code', 'visual studio', 'pycharm', 'idea']):
-                    print(f"检测到代码编辑器: {window_title}, 切换到代码场景")
-                    return '代码'
-        # 默认返回用户选择的场景
-        return self.template_scene_var.get()
+
+        fallback = self.template_scene_var.get()
+        scene = _suggest_scene(process_name, window_title, mapping=self.app_template_mapping, fallback=fallback)
+        # 保留必要日志，便于排查
+        if process_name and process_name in self.app_template_mapping:
+            print(f"检测到应用: {process_name}, 自动切换场景: {scene}")
+        elif window_title and scene != fallback:
+            print(f"检测到窗口: {window_title}, 自动切换场景: {scene}")
+        return scene
     
     def start_recording(self):
         """开始录音"""
@@ -1830,374 +1758,7 @@ class VoiceRecognitionGUI:
             print(f"播放音效失败: {e} -> {path}\n若文件为 mp3，可先转换: from pydub import AudioSegment; AudioSegment.from_mp3('x.mp3').export('x.wav', format='wav')")
 
 
-class CustomRecognizer(HoldToTalkRecognizer):
-    """自定义识别器，集成GUI回调"""
-    
-    def __init__(self, gui_app):
-        super().__init__()
-        self.gui_app = gui_app
-        self.start_time = None
-    
-    def start_session(self):
-        """重写开始会话方法，记录开始时间"""
-        import time
-        self.start_time = time.time()
-        super().start_session()
-    
-    def stop_session(self):
-        """重写停止会话方法，添加GUI回调"""
-        if not self._running:
-            return
-        
-        # 计算录音时长
-        import time
-        recording_duration = 0
-        if self.start_time:
-            recording_duration = int(time.time() - self.start_time)
-            self.gui_app.last_recording_duration = recording_duration
-        
-        print('Stop recognition session')
-        self._running = False
-        
-        if self._audio_thread is not None:
-            self._audio_thread.join()
-        
-        if self._recognition is not None:
-            self._recognition.stop()
-        
-        # 清理资源
-        if self._stream is not None:
-            try:
-                self._stream.stop_stream()
-                self._stream.close()
-            except Exception:
-                pass
-        
-        if self._mic is not None:
-            try:
-                self._mic.terminate()
-            except Exception:
-                pass
-        
-        self._stream = None
-        self._mic = None
-        self._recognition = None
-        self._audio_thread = None
-        self._callback = None
-        
-        # 处理结果
-        with self._results_lock:
-            results = getattr(self, '_results', [])
-            
-            if results:
-                final_text = ' '.join(results)
-                print('Final recognition result:\n' + final_text)
-                # 1. 获取当前场景（含智能切换）
-                template_name = self.gui_app.get_smart_template() if hasattr(self.gui_app, 'get_smart_template') else "文本"
-                lang_mode = self.gui_app.language_mode_var.get() if hasattr(self.gui_app, 'language_mode_var') else '中文'
-                print(f"当前语言模式: {lang_mode}, 场景: {template_name}")
-
-                # 1.1 应用用户词典替换（不修改原始 final_text，用于发送给模型的文本）
-                processed_for_model = final_text
-                try:
-                    if hasattr(self.gui_app, 'user_dict') and isinstance(self.gui_app.user_dict, dict):
-                        processed_for_model, dict_hits = self._apply_user_dictionary(processed_for_model, self.gui_app.user_dict)
-                        if dict_hits:
-                            # 详细列出替换条目 src->dst(次数)
-                            hits_str = "; ".join([f"{src}->{dst}({cnt}处)" for src, dst, cnt in dict_hits])
-                            print(f"用户词典替换明细: {hits_str}")
-                        else:
-                            print("用户词典无匹配替换")
-                except Exception as dic_e:
-                    print(f"应用用户词典失败: {dic_e}")
-
-                # 2. 根据配置构造 system 提示词（优先：场景 > 默认 > 内置）
-                system_prompt = None
-                try:
-                    prompts_cfg = getattr(self.gui_app, 'prompts', {}) or {}
-                    scenes_cfg = prompts_cfg.get('scenes', {}) if isinstance(prompts_cfg, dict) else {}
-                    user_default = prompts_cfg.get('default')
-
-                    # 1. 用户场景专属
-                    if template_name in scenes_cfg and scenes_cfg.get(template_name):
-                        system_prompt = scenes_cfg.get(template_name)
-                        print(f"使用用户自定义场景提示词: {template_name}")
-                    else:
-                        # 2. 用户默认
-                        if user_default:
-                            system_prompt = user_default
-                            print(f"场景 '{template_name}' 未配置，回退到用户默认提示词")
-                        else:
-                            system_prompt = None
-
-                        # 3. 内置场景（增强体验）
-                        if (not scenes_cfg.get(template_name)) and template_name in getattr(self.gui_app, 'builtin_scene_prompts', {}):
-                            # 仅当该场景没有用户自定义提示词时启用内置场景
-                            system_prompt = self.gui_app.builtin_scene_prompts.get(template_name)
-                            print(f"未找到用户 '{template_name}' 场景提示词，使用内置场景提示词")
-
-                    # 4. 最终兜底
-                    if not system_prompt:
-                        system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
-                        print("使用内置默认提示词 (所有回退均缺失)")
-                except Exception as e:
-                    print(f"读取/选择提示词异常，使用内置默认: {e}")
-                    system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
-
-                # 外语模式统一附加英文输出要求
-                # 英语模式统一附加英文输出要求 (兼容旧值 '外语')
-                if lang_mode in ('英语', '外语', '英文', 'English'):
-                    # 英语模式: 强制输出纯英文（翻译+润色）
-                    english_enforcer = (
-                        "IMPORTANT: You must output ONLY English text.\n"
-                        "Task: Understand the user's spoken intent (may be Chinese) and produce a concise, natural English sentence or short paragraph conveying exactly the same meaning.\n"
-                        "Rules:\n"
-                        "1. Do NOT include ANY Chinese characters.\n"
-                        "2. Preserve key factual details (names, numbers, times).\n"
-                        "3. Do NOT add explanations, apologies, or meta commentary.\n"
-                        "4. If the input is already English, just lightly polish it.\n"
-                        "5. Output only the final English text, no labels or prefixes."
-                    )
-                    system_prompt = system_prompt.strip() + "\n" + english_enforcer
-                # 3. 组装 messages
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": processed_for_model}
-                ]
-                print(f"使用 system 提示词(截断显示): {system_prompt[:60]}...")
-                print(f"messages: {messages}")
-                
-                try:
-                    # 优先使用统一服务层 LLM
-                    if getattr(self.gui_app, 'runtime', None):
-                        formatted = self.gui_app.runtime.llm.generate(messages)
-                    else:
-                        formatted = self._format_text.generate(messages)
-                    if formatted:
-                        formatted_content = formatted.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
-                        # 若是英语模式，检查是否仍含有中文字符，若有则重试一次
-                        if lang_mode in ('英语', '外语', '英文', 'English') and re.search(r'[\u4e00-\u9fff]', formatted_content):
-                            print("检测到输出包含中文，执行英文回退重试...")
-                            retry_system = (
-                                "You previously returned non-English content. Now STRICTLY output ONLY English. "
-                                "Translate and refine the user's intent. No Chinese characters. No explanations."
-                            )
-                            retry_messages = [
-                                {"role": "system", "content": retry_system},
-                                {"role": "user", "content": final_text}
-                            ]
-                            try:
-                                if getattr(self.gui_app, 'runtime', None):
-                                    retry_resp = self.gui_app.runtime.llm.generate(retry_messages)
-                                else:
-                                    retry_resp = self._format_text.generate(retry_messages)
-                                if retry_resp:
-                                    retry_content = retry_resp.get("output", {}).get("choices", [])[0].get("message", {}).get("content", "")
-                                    if retry_content and not re.search(r'[\u4e00-\u9fff]', retry_content):
-                                        print("回退重试成功，使用英文版本。")
-                                        formatted_content = retry_content
-                                    else:
-                                        print("回退重试仍含中文，保留原结果。")
-                            except Exception as re_try_e:
-                                print(f"英文回退重试失败: {re_try_e}")
-                        print('Formatted text:\n' + formatted_content)
-                        
-                        # 自动粘贴（如果启用）
-                        if hasattr(self.gui_app, 'auto_paste_var') and self.gui_app.auto_paste_var.get():
-                            try:
-                                import pyperclip
-                                import pyautogui
-                                import time
-                                
-                                # 复制到剪贴板
-                                pyperclip.copy(formatted_content)
-                                print(f"已复制到剪贴板: {formatted_content[:50]}...")
-                                
-                                # 短暂延迟确保复制完成
-                                time.sleep(0.1)
-                                
-                                # 模拟粘贴
-                                pyautogui.hotkey("ctrl", "v")
-                                print("已执行粘贴操作")
-                                
-                            except Exception as paste_error:
-                                print(f"自动粘贴失败: {paste_error}")
-                        
-                        # 回调GUI - 中文按字符数统计更准确
-                        word_count = len([c for c in final_text if c.isalnum()])
-                        # 使用after方法确保在主线程中执行GUI更新
-                        self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete(final_text, formatted_content, word_count))
-                    else:
-                        print('No formatted response received.')
-                        word_count = len([c for c in final_text if c.isalnum()])
-                        # 使用after方法确保在主线程中执行GUI更新
-                        self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete(final_text, final_text, word_count))
-                        
-                except Exception as e:
-                    print(f'格式化文本失败: {e}')
-                    word_count = len([c for c in final_text if c.isalnum()])
-                    # 使用after方法确保在主线程中执行GUI更新
-                    self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete(final_text, final_text, word_count))
-            else:
-                print('No final recognition result.')
-            
-            # 清空结果
-            self._results = []
-
-    # ================= 用户词典替换逻辑 =================
-    def _apply_user_dictionary(self, text: str, mapping: dict):
-        """
-        按用户词典顺序(长词优先)进行替换。
-        返回 (new_text, hits)
-        hits: list[(src, dst, count)] 仅包含发生实际替换的条目。
-        """
-        if not mapping:
-            return text, []
-        hits = []
-        # 长度优先，避免短词抢占长词的一部分
-        for src in sorted(mapping.keys(), key=lambda k: len(k), reverse=True):
-            if not src:
-                continue
-            dst = mapping[src]
-            try:
-                count = text.count(src)
-                if count > 0:
-                    text = text.replace(src, dst)
-                    hits.append((src, dst, count))
-            except Exception:
-                continue
-        return text, hits
-
-# ================= ServiceRecognizer 基于统一 service 层 =================
-class ServiceRecognizer:
-    """使用 services.FlyRecRuntime 中的 ASR + LLM，复用 GUI 现有回调逻辑。
-
-    对外暴露 start_session / stop_session，与旧 CustomRecognizer 接口保持一致，
-    便于 GUI 代码最小改动。"""
-    def __init__(self, gui_app: 'VoiceRecognitionGUI'):
-        if not getattr(gui_app, 'runtime', None):
-            raise RuntimeError('runtime 未初始化')
-        self.gui_app = gui_app
-        # 运行时组件（加入显式检查，避免类型分析告警）
-        runtime = gui_app.runtime
-        if runtime is None or not hasattr(runtime, 'asr') or not hasattr(runtime, 'llm'):
-            raise RuntimeError('runtime 不完整，缺少 asr/llm')
-        self.asr = runtime.asr  # type: ignore[attr-defined]
-        self.llm = runtime.llm  # type: ignore[attr-defined]
-        self.start_time = None
-        # 绑定可选流式回调（目前只打印，可扩展为实时显示）
-        try:
-            self.asr.on_partial(self._on_partial)
-        except Exception:
-            pass
-
-    def _on_partial(self, piece: str):
-        # 预留：可实现实时 UI 更新 (例如在录音指示窗口展示临时文本)
-        # print(f"[partial] {piece}")
-        pass
-
-    def start_session(self):
-        import time
-        if self.asr.is_running():
-            return
-        self.start_time = time.time()
-        self.asr.start()
-
-    def stop_session(self):
-        if not self.asr.is_running():
-            return
-        result = self.asr.stop()
-        final_text = result.get('text', '')
-        if not final_text:
-            print('No final recognition result.')
-            self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete('', '', 0))
-            return
-
-        # 录音时长
-        duration = result.get('duration') or 0
-        self.gui_app.last_recording_duration = int(duration)
-
-        # 场景与语言
-        template_name = self.gui_app.get_smart_template()
-        lang_mode = self.gui_app.language_mode_var.get()
-        print(f"[ServiceRecognizer] 模式: {lang_mode}, 场景: {template_name}")
-
-        # 用户词典替换
-        processed_for_model = final_text
-        try:
-            if hasattr(self.gui_app, 'user_dict') and isinstance(self.gui_app.user_dict, dict):
-                processed_for_model, dict_hits = CustomRecognizer._apply_user_dictionary(self=CustomRecognizer(self.gui_app), text=processed_for_model, mapping=self.gui_app.user_dict)  # 临时复用逻辑
-                if dict_hits:
-                    hits_str = '; '.join([f"{s}->{d}({c})" for s, d, c in dict_hits])
-                    print(f"用户词典替换明细: {hits_str}")
-        except Exception as dic_e:
-            print(f"用户词典应用失败: {dic_e}")
-
-        # system prompt 选择
-        try:
-            prompts_cfg = getattr(self.gui_app, 'prompts', {}) or {}
-            scenes_cfg = prompts_cfg.get('scenes', {}) if isinstance(prompts_cfg, dict) else {}
-            user_default = prompts_cfg.get('default')
-            if template_name in scenes_cfg and scenes_cfg.get(template_name):
-                system_prompt = str(scenes_cfg.get(template_name))
-            elif user_default:
-                system_prompt = str(user_default)
-            elif template_name in getattr(self.gui_app, 'builtin_scene_prompts', {}):
-                system_prompt = str(self.gui_app.builtin_scene_prompts.get(template_name))
-            else:
-                system_prompt = str(getattr(self.gui_app, 'builtin_default_prompt', ''))
-        except Exception:
-            system_prompt = getattr(self.gui_app, 'builtin_default_prompt', '')
-
-        if lang_mode in ('英语', '外语', '英文', 'English') and isinstance(system_prompt, str):
-            english_enforcer = (
-                "IMPORTANT: You must output ONLY English text.\n"
-                "Task: Understand the user's spoken intent (may be Chinese) and produce a concise, natural English sentence or short paragraph conveying exactly the same meaning.\n"
-                "Rules:\n1. Do NOT include ANY Chinese characters.\n2. Preserve key factual details.\n3. No explanations.\n4. If already English, lightly polish.\n5. Output only English text."
-            )
-            system_prompt = system_prompt.strip() + "\n" + english_enforcer
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": processed_for_model}
-        ]
-
-        try:
-            formatted = self.llm.generate(messages)
-            formatted_content = formatted.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '') if formatted else ''
-            # 英语重试
-            import re as _re
-            if lang_mode in ('英语', '外语', '英文', 'English') and _re.search(r'[\u4e00-\u9fff]', formatted_content):
-                retry_messages = [
-                    {"role": "system", "content": "Output ONLY English. Translate and refine."},
-                    {"role": "user", "content": final_text}
-                ]
-                try:
-                    retry_resp = self.llm.generate(retry_messages)
-                    retry_content = retry_resp.get('output', {}).get('choices', [])[0].get('message', {}).get('content', '')
-                    if retry_content and not _re.search(r'[\u4e00-\u9fff]', retry_content):
-                        formatted_content = retry_content
-                except Exception as _re_e:
-                    print(f"英文回退失败: {_re_e}")
-        except Exception as e:
-            print(f"格式化失败: {e}")
-            formatted_content = final_text
-
-        if hasattr(self.gui_app, 'auto_paste_var') and self.gui_app.auto_paste_var.get():
-            try:
-                import pyperclip, pyautogui, time as _t
-                pyperclip.copy(formatted_content)
-                _t.sleep(0.1)
-                pyautogui.hotkey('ctrl', 'v')
-            except Exception as _pe:
-                print(f"自动粘贴失败: {_pe}")
-
-        word_count = len([c for c in final_text if c.isalnum()])
-        self.gui_app.root.after(0, lambda: self.gui_app.on_recognition_complete(final_text, formatted_content, word_count))
-
-    # 兼容旧接口
-    def is_running(self):
-        return self.asr.is_running()
+ 
             
 if __name__ == "__main__":
     app = VoiceRecognitionGUI()

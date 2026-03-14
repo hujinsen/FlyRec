@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import pystray
 from PIL import Image, ImageDraw
-from demo4 import HoldToTalkRecognizer
+from legacy_hold_to_talk import HoldToTalkRecognizer
 import keyboard
 import sys
 try:
@@ -981,16 +981,16 @@ class CustomRecognizer(HoldToTalkRecognizer):
                 
                 # 选择消息模板
                 if template == "邮件":
-                    from demo4 import EMAIL_MESSAGE
+                    from legacy_hold_to_talk import EMAIL_MESSAGE
                     messages = EMAIL_MESSAGE.copy()
                 elif template == "代码":
-                    from demo4 import CODE_MESSAGE
+                    from legacy_hold_to_talk import CODE_MESSAGE
                     messages = CODE_MESSAGE.copy()
                 elif template == "聊天":
-                    from demo4 import CHAT_MESSAGE
+                    from legacy_hold_to_talk import CHAT_MESSAGE
                     messages = CHAT_MESSAGE.copy()
                 else:
-                    from demo4 import DEFAULT_MESSAGE
+                    from legacy_hold_to_talk import DEFAULT_MESSAGE
                     messages = DEFAULT_MESSAGE.copy()
                 
                 messages[-1]['content'] = final_text
